@@ -1,6 +1,6 @@
 ---
 name: feedready
-description: Suggest and apply Lightroom/Snapseed-style photo edits (exposure, shadows, clarity, dehaze, colour, crop) including region edits on specific things in the photo (face, eyes, sky, mountains, person, background, small spots), then hand back the final image. Use when the user shares a photo and asks for edit suggestions, says "apply these edits", "make this insta/linkedin ready", "edit this for my profile picture", pastes a numbered edit list to apply, or invokes /feedready.
+description: Suggest the best Lightroom/Snapseed-style edits for a photo from measured findings, then apply the ones the user picks (exposure, shadows, clarity, dehaze, colour, crop) including region edits on specific things in the photo (face, eyes, sky, mountains, person, background, small spots), and hand back the final image. Use when the user shares a photo and asks for edit suggestions, says "apply these edits", "make this insta/linkedin ready", "edit this for my profile picture", pastes a numbered edit list to apply, or invokes /feedready.
 ---
 
 # feedready
@@ -18,11 +18,19 @@ Run `run.sh doctor`.
 ## 1. Inspect
 `run.sh inspect PHOTO`, then **look at** the `original` and `grid` images it returns. The grid has yellow lines every 10% labelled .1–.9, with any detected face boxed in cyan. Read every coordinate you use from this grid. Don't estimate pixel positions by eye.
 
-The JSON also gives brightness stats, faces (box plus pupils), subject boxes and `scene_classes` (the main things in the photo with their share and box). Use these to choose masks.
+The JSON also gives brightness stats, faces, subject boxes, `scene_classes`, and `diagnostics.findings`. Each finding is a measured problem with its `evidence` and a ready recipe `step` (or a `crop` per destination). `diagnostics.skipped` lists the checks this tier couldn't run.
 
-## 2. Suggest, or map the user's list
-- If the user wants suggestions, give a short numbered list in this style: what to change, where, by how much, and why it helps the post. Keep the photo's mood unless asked. Suggest a crop for the destination: Instagram 4:5, LinkedIn square, story 9:16.
-- If they pasted suggestions (often from an earlier chat), map each item to a recipe step and say what each became, e.g. "eyes +0.4 EV → radial mask on the eyes, exposure 0.4". Flag anything you can't do, such as generative fill or object removal bigger than a small spot.
+## 2. Suggest, then wait for the pick
+Never render before the user has chosen. The one exception: the user already gave the exact edits and said to apply them, e.g. a pasted list plus "apply". In that case, map each item to a step in one line ("eyes +0.4 EV → radial on the eyes, exposure 0.4"), flag anything you can't do, and continue.
+
+Otherwise, suggest. Start from the findings, then add what measurements can't judge: mood, composition, distracting objects, colour harmony. Look at the photo for that.
+- Give at most 6 items, ranked by impact for the destination. Put the crop first when you know where the photo is going (Instagram 4:5, LinkedIn square, story 9:16). If you don't know, ask in the same message.
+- Each item says what to change, where, how much, and why it helps the post. Quote the evidence, e.g. "you're 2.9 stops darker than the sky".
+- Mark taste calls as optional: a cast that may be the grade, a silhouette that may be the look.
+- Keep the photo's mood unless the user asks for a new look.
+- End with: "Reply 'go' for all, pick numbers (e.g. 1, 3, 4), or tweak any."
+
+Then stop. The picked items become the recipe. A finding's `step` drops in as written; tweak values if the user asked.
 
 ## 3. Write the recipe and check the masks
 Write the recipe JSON to a file (schema and examples: `reference/recipe.md`). Run `run.sh masks RECIPE PHOTO` and **look at** the contact sheet, where each step's mask shows as red.

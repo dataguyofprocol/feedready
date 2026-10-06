@@ -133,11 +133,53 @@ def main():
         ratio = float(srgb_to_linear(out).mean() / srgb_to_linear(gray).mean())
         check("exposure +1 doubles linear light", abs(ratio - 2) < 0.03, f"ratio {ratio:.3f}")
 
+    print("[diagnostics]")
+    _diagnostics(tmp)
+
     rect = develop.crop_rect(1000, 1500, {"aspect": "4:5", "focus": [0.5, 0.3], "focus_at": [0.5, 0.33]}, None)
     check("crop 4:5 geometry", rect[2] == 1000 and rect[3] == 1250 and rect[1] == 38, str(rect))
 
     print("\nALL PASSED" if not FAILS else f"\nFAILED: {FAILS}")
     sys.exit(1 if FAILS else 0)
+
+
+def _findings(tmp, name, img):
+    import feedready
+
+    path = tmp / f"{name}.png"
+    save_png16(img, path)
+
+    class Args:
+        image = str(path)
+
+    found = {}
+    for f in feedready.cmd_inspect(Args())["diagnostics"]["findings"]:
+        found.setdefault(f["check"], f)
+    return found
+
+
+def _diagnostics(tmp):
+    dark = np.full((400, 600, 3), 0.08, np.float32)
+    dark[300:306, 450:470] = 0.9
+    dark += np.random.default_rng(1).normal(0, 0.01, dark.shape).astype(np.float32)
+    spots = _findings(tmp, "spot", dark.clip(0, 1)).get("distractions")
+    check("distractions finds the lone bright strip",
+          spots is not None and spots["evidence"]["spots"][0][:2] == [0.766, 0.756], str(spots and spots["evidence"]))
+
+    gray = np.full((400, 600, 3), 0.5, np.float32)
+    gray[200:] = 0.6
+    warm = develop.np_apply_op(gray, {"op": "matrix", "r": 1.12, "g": 1.0, "b": 0.9})
+    cast = _findings(tmp, "warm", warm).get("color_cast")
+    check("color_cast proposes cooling a warm cast", cast is not None and cast["step"]["adjust"].get("temp", 0) < -8,
+          str(cast and cast["step"]))
+
+    under = _findings(tmp, "under", card() * 0.25).get("exposure")
+    check("exposure proposes brightening an underexposed photo", under is not None and under["step"]["adjust"].get("exposure", 0) > 0,
+          str(under and under["step"]))
+
+    clean = _findings(tmp, "clean", card())
+    check("a well-exposed neutral card gets no exposure or cast findings",
+          "exposure" not in clean and "color_cast" not in clean, str(sorted(clean)))
 
 
 def _apply(renderer, recipe, src, out):

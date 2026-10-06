@@ -25,6 +25,7 @@ from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, str(Path(__file__).parent))
 
 import develop  # noqa: E402
+import diagnose  # noqa: E402
 import masks as maskmod  # noqa: E402
 from detect import CACHE, MissingCapability, Scene, engine_available, run_engine, segformer_available  # noqa: E402
 from imaging import cv2, load_rgb, luma, save_jpeg, save_mask, save_png16, to_u8  # noqa: E402
@@ -158,6 +159,7 @@ def cmd_inspect(args) -> dict:
             out["horizon_degrees"] = round(v["horizon_degrees"], 2)
     if segformer_available():
         out["scene_classes"] = scene.segment_summary()
+    out["diagnostics"] = diagnose.run(scene)
     grid = work / "grid.jpg"
     grid_image(img, scene, grid)
     out["grid"] = str(grid)
