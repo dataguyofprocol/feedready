@@ -1,0 +1,5 @@
+numpy>=2.2
+pillow>=12
+pillow-heif>=1.0
+opencv-contrib-python-headless>=4.10
+onnxruntime>=1.30

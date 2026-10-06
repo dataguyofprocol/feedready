@@ -1,0 +1,327 @@
+"""Lightroom-style sliders -> ordered engine ops, plus the numpy implementations.
+
+Both backends share `build_ops` (slider math, LUTs, HSL), so the Core Image
+render and the numpy fallback agree on what each slider means.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+from imaging import (
+    cv2,
+    gaussian,
+    guided_filter,
+    hsv_to_rgb,
+    linear_to_srgb,
+    luma,
+    min_filter,
+    resize,
+    rgb_to_hsv,
+    smoothstep,
+    srgb_to_linear,
+)
+
+# name: (min, max, meaning) - Lightroom JPEG-mode units
+SLIDERS = {
+    "exposure": (-5, 5, "stops"),
+    "contrast": (-100, 100, ""),
+    "highlights": (-100, 100, ""),
+    "shadows": (-100, 100, ""),
+    "whites": (-100, 100, ""),
+    "blacks": (-100, 100, ""),
+    "temp": (-100, 100, "+ warmer"),
+    "tint": (-100, 100, "+ magenta"),
+    "vibrance": (-100, 100, ""),
+    "saturation": (-100, 100, ""),
+    "texture": (-100, 100, ""),
+    "clarity": (-100, 100, ""),
+    "dehaze": (-100, 100, ""),
+    "sharpen": (0, 150, ""),
+}
+HSL_BANDS = {"red": 0, "orange": 30, "yellow": 60, "green": 120, "aqua": 180, "blue": 240, "purple": 280, "magenta": 320}
+PREPASS = ("heal", "dehaze", "texture", "clarity")
+LUT_SIZE = 1024
+CUBE_DIM = 32
+
+
+def validate(adjust: dict) -> list[str]:
+    """Clamp sliders in place; return warnings for unknown or clamped keys."""
+    warnings = []
+    for k, v in list(adjust.items()):
+        if k in SLIDERS:
+            lo, hi, _ = SLIDERS[k]
+            if not lo <= v <= hi:
+                adjust[k] = min(max(v, lo), hi)
+                warnings.append(f"{k}={v} clamped to {adjust[k]}")
+        elif k == "hsl":
+            for band in v:
+                if band not in HSL_BANDS:
+                    warnings.append(f"unknown hsl band '{band}' ignored")
+        elif k not in ("curve", "heal"):
+            warnings.append(f"unknown adjustment '{k}' ignored")
+    return warnings
+
+
+# --- tone curve -----------------------------------------------------------
+
+def _monotone_cubic(points, x):
+    """Fritsch-Carlson monotone interpolation through sorted (x, y) points."""
+    p = np.array(sorted(points), dtype=np.float64)
+    xs, ys = p[:, 0], p[:, 1]
+    if len(xs) < 2:
+        return x
+    d = np.diff(ys) / np.maximum(np.diff(xs), 1e-9)
+    m = np.concatenate([[d[0]], (d[:-1] + d[1:]) / 2, [d[-1]]])
+    for i, dk in enumerate(d):
+        if dk == 0:
+            m[i] = m[i + 1] = 0
+        else:
+            a, b = m[i] / dk, m[i + 1] / dk
+            s = a * a + b * b
+            if s > 9:
+                t = 3 / np.sqrt(s)
+                m[i], m[i + 1] = t * a * dk, t * b * dk
+    k = np.clip(np.searchsorted(xs, x) - 1, 0, len(xs) - 2)
+    h = xs[k + 1] - xs[k]
+    t = np.clip((x - xs[k]) / h, 0, 1)
+    h00, h10 = 2 * t**3 - 3 * t**2 + 1, t**3 - 2 * t**2 + t
+    h01, h11 = -2 * t**3 + 3 * t**2, t**3 - t**2
+    return h00 * ys[k] + h10 * h * m[k] + h01 * ys[k + 1] + h11 * h * m[k + 1]
+
+
+def tone_lut(adjust: dict) -> np.ndarray | None:
+    """Contrast, positive highlights, whites, blacks and point curve as one 1D LUT on sRGB values."""
+    c = adjust.get("contrast", 0) / 100
+    hi = max(adjust.get("highlights", 0), 0) / 100
+    w = adjust.get("whites", 0) / 100
+    b = adjust.get("blacks", 0) / 100
+    curve = adjust.get("curve")
+    if not any([c, hi, w, b, curve]):
+        return None
+    x = np.linspace(0, 1, LUT_SIZE)
+    y = x.copy()
+    if c > 0:
+        s = y * y * (3 - 2 * y)
+        y = y + (s - y) * c * 0.75
+    elif c < 0:
+        y = 0.5 + (y - 0.5) * (1 + c * 0.45)
+    if hi:
+        y = y + hi * 0.12 * np.exp(-(((y - 0.72) / 0.16) ** 2))
+    if w:
+        y = y + w * 0.14 * smoothstep(0.55, 1.0, y) ** 2
+    if b:
+        y = y + b * 0.10 * (1 - smoothstep(0.0, 0.45, y)) ** 2
+    if curve:
+        y = _monotone_cubic(curve, np.clip(y, 0, 1))
+    return np.clip(y, 0, 1).astype(np.float32)
+
+
+# --- colour ---------------------------------------------------------------
+
+def wb_gains(adjust: dict):
+    t = adjust.get("temp", 0) / 100
+    u = adjust.get("tint", 0) / 100
+    if not t and not u:
+        return None
+    r, g, b = 2 ** (0.35 * t + 0.08 * u), 2 ** (-0.22 * u), 2 ** (-0.35 * t + 0.08 * u)
+    norm = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return r / norm, g / norm, b / norm
+
+
+def _band_weights(h: np.ndarray) -> dict:
+    """Triangular weights between neighbouring band centres; they sum to 1 at every hue."""
+    names = list(HSL_BANDS)
+    centres = np.array([HSL_BANDS[n] for n in names], dtype=np.float32)
+    weights = {}
+    for i, name in enumerate(names):
+        prev_c = centres[i - 1] - (360 if i == 0 else 0)
+        next_c = centres[(i + 1) % len(names)] + (360 if i == len(names) - 1 else 0)
+        c = centres[i]
+        d = (h - c + 180) % 360 - 180
+        weights[name] = np.where(d < 0, np.clip(1 + d / (c - prev_c), 0, 1), np.clip(1 - d / (next_c - c), 0, 1))
+    return weights
+
+
+def apply_hsl(img: np.ndarray, hsl: dict) -> np.ndarray:
+    h, s, v = rgb_to_hsv(img)
+    weights = _band_weights(h)
+    dh = np.zeros_like(h)
+    ds = np.zeros_like(h)
+    dl = np.zeros_like(h)
+    for band, p in hsl.items():
+        if band not in weights:
+            continue
+        w = weights[band]
+        dh += w * p.get("hue", 0) * 0.3
+        ds += w * p.get("sat", 0) / 100
+        dl += w * p.get("lum", 0) / 100
+    s2 = np.clip(s * (1 + ds), 0, 1)
+    v2 = np.clip(v * 2 ** (dl * 0.8 * s), 0, 1)
+    return hsv_to_rgb(h + dh, s2, v2)
+
+
+def hsl_cube(hsl: dict) -> np.ndarray:
+    """RGBA float32 cube for CIColorCubeWithColorSpace (red varies fastest)."""
+    g = np.linspace(0, 1, CUBE_DIM, dtype=np.float32)
+    b_, g_, r_ = np.meshgrid(g, g, g, indexing="ij")
+    rgb = np.stack([r_, g_, b_], -1).reshape(-1, 1, 3)
+    out = apply_hsl(rgb, hsl).reshape(-1, 3)
+    return np.concatenate([out, np.ones((out.shape[0], 1), np.float32)], 1).astype(np.float32)
+
+
+# --- ops ------------------------------------------------------------------
+
+def build_ops(adjust: dict, long_edge: int) -> list[dict]:
+    """Ordered engine ops for one step (prepass sliders - PREPASS - are handled separately)."""
+    ops = []
+    if gains := wb_gains(adjust):
+        ops.append({"op": "matrix", "r": gains[0], "g": gains[1], "b": gains[2]})
+    if ev := adjust.get("exposure", 0):
+        ops.append({"op": "exposure", "ev": ev})
+    sh, hl = adjust.get("shadows", 0), adjust.get("highlights", 0)
+    if sh or hl < 0:
+        ops.append({
+            "op": "highlight_shadow",
+            # Core Image's negative shadows are far stronger than its positive ones.
+            "shadow": sh / 100 * (0.45 if sh < 0 else 1.0),
+            "highlight": 1 + min(hl, 0) / 100,
+            "radius": round(max(2.0, long_edge * 0.004), 1),
+        })
+    if (lut := tone_lut(adjust)) is not None:
+        ops.append({"op": "curves", "lut": lut})
+    if hsl := {k: v for k, v in adjust.get("hsl", {}).items() if k in HSL_BANDS}:
+        ops.append({"op": "cube", "hsl": hsl})
+    if vib := adjust.get("vibrance", 0):
+        ops.append({"op": "vibrance", "amount": vib / 100})
+    if sat := adjust.get("saturation", 0):
+        ops.append({"op": "saturation", "value": 1 + sat / 100})
+    if sharp := adjust.get("sharpen", 0):
+        ops.append({"op": "sharpen", "sharpness": sharp / 150, "radius": 1.5 * max(1.0, long_edge / 3000)})
+    return ops
+
+
+def _midtones(img):
+    x = luma(img)
+    return np.clip(4 * x * (1 - x) * 1.25, 0, 1)[..., None]
+
+
+def np_apply_op(img: np.ndarray, op: dict) -> np.ndarray:
+    """numpy equivalent of one engine op (fallback tier and tests)."""
+    kind = op["op"]
+    if kind == "matrix":
+        lin = srgb_to_linear(img) * np.array([op["r"], op["g"], op["b"]], np.float32)
+        return linear_to_srgb(lin)
+    if kind == "exposure":
+        return linear_to_srgb(srgb_to_linear(img) * 2 ** op["ev"])
+    if kind == "highlight_shadow":
+        lum = luma(img)
+        base = guided_filter(lum, lum, max(2, int(op["radius"] * 5)), 0.01)
+        shift = op["shadow"] * 1.5 * (1 - smoothstep(0.0, 0.6, base))
+        shift -= (1 - op["highlight"]) * 1.5 * smoothstep(0.4, 1.0, base)
+        return linear_to_srgb(srgb_to_linear(img) * (2 ** shift)[..., None])
+    if kind == "curves":
+        lut = op["lut"]
+        return np.interp(img, np.linspace(0, 1, len(lut)), lut).astype(np.float32)
+    if kind == "cube":
+        return apply_hsl(img, op["hsl"])
+    if kind in ("vibrance", "saturation"):
+        lum = luma(img)[..., None]
+        if kind == "saturation":
+            factor = op["value"]
+        else:
+            _, s, _ = rgb_to_hsv(img)
+            factor = (1 + op["amount"] * (1 - s))[..., None]
+        return lum + (img - lum) * factor
+    if kind == "sharpen":
+        lum = luma(img)
+        detail = lum - gaussian(lum, op["radius"])
+        return img + op["sharpness"] * 1.5 * detail[..., None]
+    raise ValueError(f"unknown op {kind}")
+
+
+# --- prepass (numpy / OpenCV, before the Core Image render) ---------------
+
+def local_contrast(img: np.ndarray, kind: str, amount: float) -> np.ndarray:
+    """Clarity / texture: boost luminance detail above an edge-aware base.
+
+    The guided-filter base follows strong edges, so a dark head against a bright
+    sky gets no halo (a gaussian unsharp mask glows there). amount in [-1, 1].
+    """
+    long_edge = max(img.shape[:2])
+    radius, eps, gain = (max(8, int(long_edge * 0.02)), 4e-3, 2.2) if kind == "clarity" else (max(2, int(long_edge * 0.003)), 1e-3, 1.6)
+    lum = luma(img)
+    detail = lum - guided_filter(lum, lum, radius, eps)
+    k = gain * amount if amount >= 0 else max(-1.0, amount)
+    return img + (k * detail)[..., None] * _midtones(img)
+
+
+def dehaze(img: np.ndarray, amount: float) -> np.ndarray:
+    """Dark-channel-prior dehaze; amount in [-1, 1], negative adds haze."""
+    h, w = img.shape[:2]
+    scale = 512 / max(h, w)
+    small = resize(img, max(1, int(w * scale)), max(1, int(h * scale))) if scale < 1 else img
+    dark = min_filter(small.min(-1), 7)
+    flat = dark.reshape(-1)
+    top = flat >= np.quantile(flat, 0.999)
+    airlight = small.reshape(-1, 3)[top].mean(0).clip(0.5, 1.0)
+    if amount < 0:
+        return img + (airlight - img) * (-amount * 0.5)
+    trans_small = 1 - 0.9 * min_filter((small / airlight).min(-1), 7)
+    trans = resize(trans_small.astype(np.float32), w, h)
+    trans = guided_filter(img, trans, max(4, int(max(h, w) * 0.01)), 1e-3)
+    trans = np.clip(trans, 0.2, 1)[..., None]
+    clear = np.clip((img - airlight) / trans + airlight, 0, 1)
+    # Haze removal darkens; give back half the lost brightness so it reads as contrast, not exposure.
+    before, after = srgb_to_linear(img).mean(), srgb_to_linear(clear).mean()
+    clear = linear_to_srgb(srgb_to_linear(clear) * np.sqrt(before / max(after, 1e-6)))
+    return img + (clear - img) * amount
+
+
+def heal(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Inpaint the masked spots from their surroundings (needs OpenCV)."""
+    if cv2 is None:
+        raise RuntimeError("heal needs opencv (Mac tier)")
+    hole = (mask > 0.3).astype(np.uint8) * 255
+    hole = cv2.dilate(hole, np.ones((5, 5), np.uint8))
+    bgr = cv2.cvtColor((img.clip(0, 1) * 255 + 0.5).astype(np.uint8), cv2.COLOR_RGB2BGR)
+    fixed = cv2.cvtColor(cv2.inpaint(bgr, hole, 5, cv2.INPAINT_TELEA), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
+    soft = gaussian(hole.astype(np.float32) / 255, 2)[..., None]
+    return img * (1 - soft) + fixed * soft
+
+
+# --- crop -----------------------------------------------------------------
+
+PRESETS = {
+    "instagram": {"aspect": (4, 5), "size": (1080, 1350)},
+    "story": {"aspect": (9, 16), "size": (1080, 1920)},
+    "linkedin": {"aspect": (1, 1), "size": (1080, 1080)},
+    "original": {"aspect": None, "size": None},
+}
+
+
+def parse_aspect(a):
+    if a is None or isinstance(a, (list, tuple)):
+        return a
+    w, h = str(a).replace("x", ":").split(":")
+    return float(w), float(h)
+
+
+def crop_rect(W: int, H: int, spec: dict | None, preset_aspect) -> tuple[int, int, int, int] | None:
+    """Pixel crop (x, y, w, h). `spec` may give box, or aspect + focus point placement."""
+    spec = spec or {}
+    if box := spec.get("box"):
+        x0, y0, x1, y1 = box
+        return int(x0 * W), int(y0 * H), int((x1 - x0) * W), int((y1 - y0) * H)
+    aspect = parse_aspect(spec.get("aspect")) or preset_aspect
+    if not aspect:
+        return None
+    ar = aspect[0] / aspect[1]
+    cw, ch = (W, W / ar) if W / H < ar else (H * ar, H)
+    zoom = min(max(spec.get("scale", 1.0), 0.1), 1.0)
+    cw, ch = cw * zoom, ch * zoom
+    fx, fy = spec.get("focus", (0.5, 0.5))
+    ax, ay = spec.get("focus_at", (0.5, 0.5))
+    x = min(max(fx * W - ax * cw, 0), W - cw)
+    y = min(max(fy * H - ay * ch, 0), H - ch)
+    return int(round(x)), int(round(y)), int(round(cw)), int(round(ch))
