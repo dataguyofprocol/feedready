@@ -9,7 +9,7 @@ Repo is a Claude Code plugin (`feedready`) that is also its own plugin marketpla
 ~/.cache/feedready/venv/bin/python tests/selftest.py   # must end with "ALL PASSED"
 
 # Engine CLI (prints JSON); run from skills/feedready/
-./run.sh doctor | inspect <photo> | masks <recipe> <photo> | apply <recipe> <photo>
+./run.sh doctor | inspect <photo> | masks <recipe> <photo> | board <photo> <recipe>... | preview <recipe> <photo> --note "..." | apply <recipe|vN> <photo>
 
 # Rebuild runtime (safe to rerun); --segformer / --models download models (~75 MB)
 skills/feedready/setup.sh --segformer --models
@@ -30,12 +30,14 @@ skills/feedready/setup.sh --segformer --models
 
 ## Architecture
 
-- `skills/feedready/scripts/feedready.py` — CLI entrypoint and pipeline (working copy → masks → prepass → render → compare).
+- `skills/feedready/scripts/feedready.py` — CLI entrypoint: working copy, saved versions (`<work>/versions/vN.json`), and the inspect/board/preview/apply flows.
+- `scripts/render.py` — the single render path (looks resolved → prepass → crop → Core Image or numpy). `preview` and `board` render at screen size; only `apply` renders full resolution.
+- `scripts/critique.py` — measured self-review of a rendered version (impact per step, halo, skin, clipping, face vs background, HDR, noise) and board similarity. `scripts/review.py` draws every image a person looks at, plus the HTML review page.
 - `scripts/diagnose.py` — every suggestion is one function in the `CHECKS` list (line ~241); add checks there.
 - `scripts/detect.py` — owns **all** model and engine paths (`~/.cache/feedready/...`); other modules import from it.
 - `scripts/masks.py` (mask specs → masks), `scripts/develop.py` (Lightroom sliders → engine ops + prepass), `scripts/imaging.py` (numpy primitives).
 - `swift/feedready_engine.swift` — Core Image/Vision renderer. Without it (or off macOS), everything falls back to numpy: that's the "basic"/phone tier.
-- `skills/feedready/SKILL.md` is the runtime instructions for Claude; `reference/recipe.md` is the recipe schema reference. Keep them in sync with script behavior.
+- `skills/feedready/SKILL.md` is the runtime instructions for Claude (the hired-photographer loop: brief → directions board → preview rounds with self-review → notes → export); `reference/recipe.md` is the recipe schema reference; `reference/vibes.md` holds taste: looks, directions per genre, notes → moves, the review checklist. Keep them in sync with script behavior; `develop.LOOKS` and the looks table in vibes.md must match.
 
 ## Conventions worth knowing
 

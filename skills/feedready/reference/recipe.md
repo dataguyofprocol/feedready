@@ -1,14 +1,17 @@
 # Recipe reference
 
-A recipe is JSON: a file path or an inline string passed to `masks` / `apply`.
+A recipe is JSON. Pass `masks`, `board`, `preview` or `apply` a file path, an inline string, or a saved version such as `v3` (`preview` saves each recipe as the next version in `<work_dir>/versions/`).
 
 ```json
 {
+  "label": "B · Warm & soft",
+  "note": "keeps the warm room, golden skin, gentle vignette",
   "preset": "instagram",
   "crop": {"aspect": "4:5", "focus": [0.545, 0.335], "focus_at": [0.5, 0.33]},
   "steps": [
-    {"name": "global grade", "adjust": {"contrast": 10, "vibrance": 8}},
-    {"name": "lift eyes", "mask": {"type": "radial", "center": [0.555, 0.352], "radius": [0.07, 0.03]},
+    {"name": "warm grade", "look": "warm-golden", "amount": 70},
+    {"name": "lift eyes", "why": "puts the light where you're looking",
+     "mask": {"type": "radial", "center": [0.555, 0.352], "radius": [0.07, 0.03]},
      "adjust": {"exposure": 0.4}}
   ],
   "vignette": -10
@@ -16,6 +19,8 @@ A recipe is JSON: a file path or an inline string passed to `masks` / `apply`.
 ```
 
 - `steps` run in order. Each step is applied through its mask, or to the whole image if there is no mask.
+- `name` and `why` are plain-language labels shown on the edit cards and map. Write them for the user, not in slider terms.
+- `label` and `note` caption the recipe on a `board`.
 - Coordinates are normalized to the **original** photo: `[x, y]` with the origin top-left, read from the `inspect` grid.
 - Sizes (`radius`, `size`, `soft`, `feather`, `grow`) are fractions of the photo's short side.
 
@@ -28,6 +33,10 @@ A recipe is JSON: a file path or an inline string passed to `masks` / `apply`.
 | `vignette` | -100…100. Negative darkens the edges. Applied after the crop. |
 | `max_edge` | Long edge in pixels, applied after the crop; shrinks only, never enlarges. Omit it to keep full resolution. Set it only after the user agreed to shrink a `large` photo. |
 | `quality` | JPEG quality, default 100 (4:4:4 chroma). Leave it unless the user asks for a smaller file. |
+
+## Looks
+
+`"look": "<name>"` on a step expands into a full grade, and `"amount"` (0–200, default 100) scales it the way Lightroom's preset Amount does. Any `adjust` keys in the same step override the look's values, and `hsl` merges band by band. Looks: `natural`, `bright-airy`, `warm-golden`, `moody`, `film`, `cinematic`, `punchy`, `mono`. What each does and when to use it is in `vibes.md`.
 
 ## Adjustments (Lightroom JPEG-mode units)
 

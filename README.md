@@ -16,18 +16,24 @@
 
 ---
 
-Claude doesn't eyeball your photo. It **measures it first**, then suggests up to six edits ranked by impact, each backed by a number like *"you're 2.9 stops darker than the sky"*. You pick. It applies them, down to just your face, the sky or one stray object.
+Claude works like the Lightroom photographer you hired:
+
+1. **It reads the photo.** It measures the genre, where the eye should land, and what's holding the photo back, with numbers like *"the wall is 1.0 stop brighter than your face"*.
+2. **It shows you directions.** You get three rendered looks side by side: a clean version, plus two that differ visibly.
+3. **It edits in rounds.** Each version is rendered and checked against a measured critique (halos, orange skin, blown highlights, steps that do nothing) before you see it.
+4. **It takes your notes.** You reply in plain words ("darker background", "back to v2"), and it keeps going until you or it is satisfied.
 
 ```mermaid
 flowchart LR
-    A["Your photo"] --> B["Measure<br/>exposure, cast, haze, face"]
-    B --> C["Up to 6 ranked edits<br/>with evidence"]
-    C --> D{"You pick"}
-    D --> E["Mask + render"]
-    E --> F["JPEG +<br/>before/after"]
+    A["Your photo"] --> B["Read it<br/>genre, hero, findings"]
+    B --> C["3 directions<br/>on one board"]
+    C --> D["Version vN<br/>render + self-review"]
+    D --> E{"Your notes"}
+    E -->|"warmer, back to v2…"| D
+    E -->|"ship it"| F["Full-res JPEG +<br/>before/after"]
 ```
 
-**Nothing renders until you've picked.**
+**Every version is saved**, so "back to v2" or "v2 but warmer" just works.
 
 ## Mac or phone
 
@@ -83,14 +89,22 @@ Attach a photo in any Claude Code session and ask. "make this insta ready" works
 /feedready:feedready suggest edits for my linkedin profile picture
 ```
 
-Claude replies with a numbered list. Then:
+Claude replies with a board of three directions, unless you already said the vibe. Then:
 
 | You reply | Claude does |
 |---|---|
-| `go` | applies all of them |
-| `1, 3, 4` | applies just those |
-| `2 but subtler` | adjusts that one, then applies |
-| a pasted edit list + `apply` | skips suggesting, maps each item to an edit |
+| `B` or `B but darker` | edits toward that direction and shows you v1 |
+| `warmer`, `too much`, `make me pop` | the next version, changing only what you asked about |
+| `back to v2`, `v2 but warmer` | starts from that saved version |
+| `show me all versions` | a board of every version side by side |
+| `ship it` | exports that version at full resolution |
+| a pasted edit list + `apply` | skips the directions and maps each item to an edit |
+
+Each round shows you:
+- A before/after image.
+- Cards: each edit alone, zoomed to where it acts, ranked by how much it changes.
+- A map of where every edit lands.
+- On the Mac, a review page with a before/after slider across all versions.
 
 What comes back:
 
@@ -125,15 +139,19 @@ cd ~/sideones/feedready/skills/feedready
 ./run.sh doctor
 ./run.sh inspect photo.jpg
 ./run.sh masks recipe.json photo.jpg
-./run.sh apply recipe.json photo.jpg -o out.jpg
+./run.sh board photo.jpg a.json b.json c.json
+./run.sh preview recipe.json photo.jpg --note "warmer"
+./run.sh apply v3 photo.jpg -o out.jpg
 ```
 
 | Command | What you get |
 |---|---|
 | `doctor` | the tier and anything missing |
-| `inspect` | a coordinate grid, brightness stats, faces, scene classes, and `diagnostics.findings` (each problem with a ready-made recipe step) |
+| `inspect` | a coordinate grid, brightness stats, faces, scene classes, a `profile` (genre and hero), and `diagnostics.findings` (each problem with a ready-made recipe step) |
 | `masks` | a contact sheet with every step's mask in red |
-| `apply` | the rendered photo and compare image, in `~/Pictures/feedready/` unless you pass `-o` |
+| `board` | the original next to each recipe or saved version, plus a `too_similar` warning for look-alike tiles |
+| `preview` | a screen-size render saved as the next version (`v1`, `v2`…), with a compare, a diff against the last version, edit cards, an edit map, a review page and a measured `critique` |
+| `apply` | the full-resolution photo and compare image, in `~/Pictures/feedready/` unless you pass `-o`. The recipe can be a saved version such as `v3`. |
 
 A recipe is JSON, as a file or an inline string. This one crops for Instagram, brightens the eyes, adds bite to the snow caps and removes a reflective strip:
 
@@ -156,36 +174,41 @@ A recipe is JSON, as a file or an inline string. This one crops for Instagram, b
 > [!IMPORTANT]
 > Coordinates are **fractions of the original photo, origin top-left**, before the crop. Read them off the `inspect` grid, not by eye.
 
-Every slider, mask type, combinator and preset is in [`reference/recipe.md`](skills/feedready/reference/recipe.md).
+Every slider, look, mask type, combinator and preset is in [`reference/recipe.md`](skills/feedready/reference/recipe.md). The photographer's playbook (which looks to offer per genre, how notes map to moves, and the self-review checklist) is in [`reference/vibes.md`](skills/feedready/reference/vibes.md).
 
 ## Under the hood
 
 ```mermaid
 flowchart LR
     P(["photo"]) --> I["<b>inspect</b><br/>diagnose.py"]
-    I --> S["Claude suggests,<br/>you pick"]
-    S --> R(["recipe"])
+    I --> S["directions, notes<br/>vibes.md"]
+    S --> R(["recipe / vN"])
     R --> M["<b>masks</b><br/>masks.py, detect.py"]
     M --> X["<b>prepass</b><br/>develop.py"]
     X --> E{"Swift engine<br/>built?"}
     E -->|"yes (Mac)"| C["Core Image render"]
     E -->|"no (phone)"| N["numpy render"]
-    C --> O(["JPEG + compare"])
+    C --> O(["version or export"])
     N --> O
+    O --> V["<b>critique</b> + visuals<br/>critique.py, review.py"]
+    V --> S
 ```
 
 All paths are under `skills/feedready/`:
 
 | File | Owns |
 |---|---|
-| `scripts/feedready.py` | the CLI and the pipeline: working copy, masks, prepass, render, compare |
-| `scripts/diagnose.py` | the checks behind every suggestion (exposure, subject vs background, face, colour cast, haze, sky, bright distractions, headroom and crop). **Add a check as one function in `CHECKS`.** |
+| `scripts/feedready.py` | the CLI: working copy, saved versions, and the `inspect`, `board`, `preview` and `apply` flows |
+| `scripts/render.py` | one render path for every command: looks resolved, prepass, crop, Core Image or numpy |
+| `scripts/critique.py` | the self-review on each version: per-step impact, halos, skin, clipping, face vs background, HDR crunch, noise, and board similarity |
+| `scripts/review.py` | everything you look at: grid, mask sheet, compare, edit cards, edit map, board, and the HTML review page |
+| `scripts/diagnose.py` | the photo `profile` and the checks behind every finding (exposure, subject vs background, face vs background, face, skin-aware colour cast, haze, sky, bright distractions, headroom and crop). **Add a check as one function in `CHECKS`.** |
 | `scripts/masks.py` | mask specs to masks, from simple shapes to EdgeTAM objects, plus combinators and edge refinement |
 | `scripts/detect.py` | model access and per-photo caching. **Every model path lives here.** |
-| `scripts/develop.py` | sliders to engine ops, and the prepass: dehaze, clarity and texture via a guided filter, heal via MI-GAN |
+| `scripts/develop.py` | sliders and looks to engine ops, and the prepass: dehaze, clarity and texture via a guided filter, heal via MI-GAN |
 | `swift/feedready_engine.swift` | decode, Vision masks and the Core Image render |
 
-Per-photo working files are cached in `~/.cache/feedready/work/<photo>-<hash>/`.
+Per-photo working files, including every saved version, are cached in `~/.cache/feedready/work/<photo>-<hash>/`.
 
 ## Changing the skill
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from detect import MissingCapability, Scene, segformer_available
-from imaging import cv2, gaussian, luma, min_filter, resize, rgb_to_hsv, srgb_to_linear
+from imaging import cv2, gaussian, luma, min_filter, resize, rgb_to_hsv, skin_mask, srgb_to_linear
 
 SCENERY = ("mountain", "building", "tree", "water", "ground", "rock")
 
@@ -26,22 +26,25 @@ def exposure(scene: Scene):
           "clipped_pct": round(clipped * 100, 2)}
     out = []
     if clipped > 0.005:
+        amount = -int(np.clip(25 + clipped * 800, 25, 70))
         out.append({"finding": f"{clipped * 100:.1f}% of pixels are clipped to white", "evidence": ev,
-                    "step": {"name": "recover highlights", "adjust": {"highlights": -40}}})
+                    "step": {"name": "recover highlights", "adjust": {"highlights": amount}}})
     if lum.mean() < 0.28:
         lift = float(np.clip(np.log2(0.18 / max(_mean_lin(img, np.ones_like(lum)), 1e-4)) * 0.5, 0.2, 1.0))
         out.append({"finding": "the photo is underexposed overall", "evidence": ev,
                     "step": {"name": "brighten", "adjust": {"exposure": round(lift, 1)}}})
     if p99 < 0.75 and clipped < 0.001:
+        amount = int(np.clip(round((0.92 - p99) * 120), 10, 40))
         out.append({"finding": f"no true whites; the brightest 1% sits at {p99:.2f}", "evidence": ev,
-                    "step": {"name": "set whites", "adjust": {"whites": 20}}})
+                    "step": {"name": "set whites", "adjust": {"whites": amount}}})
     if p01 > 0.12:
+        amount = -int(np.clip(round((p01 - 0.03) * 150), 10, 40))
         out.append({"finding": f"blacks are washed out; the darkest 1% sits at {p01:.2f}", "evidence": ev,
-                    "step": {"name": "set blacks", "adjust": {"blacks": -20}}})
+                    "step": {"name": "set blacks", "adjust": {"blacks": amount}}})
     return out
 
 
-def _person(scene: Scene):
+def person_mask(scene: Scene):
     try:
         m = scene.vision_mask("person")
     except MissingCapability:
@@ -49,8 +52,73 @@ def _person(scene: Scene):
     return m if m.mean() >= 0.01 else None
 
 
+def _faces(scene: Scene) -> list[dict]:
+    try:
+        return scene.faces()
+    except MissingCapability:
+        return []
+
+
+def _skin_hue(img, box):
+    sel = skin_mask(img, box)
+    if sel is None:
+        return None
+    h, _, _ = rgb_to_hsv(img)
+    rad = np.deg2rad(h[sel])
+    return float(np.rad2deg(np.arctan2(np.sin(rad).mean(), np.cos(rad).mean())))
+
+
+OUTDOOR = {"sky", "mountain", "hill", "tree", "grass", "water", "sea", "river", "lake", "field", "sand", "plant",
+           "rock", "palm", "earth", "snow", "flower", "land"}
+URBAN = {"building", "skyscraper", "house", "road", "tower", "bridge", "sidewalk", "street"}
+INDOOR = {"wall", "ceiling", "floor", "table", "chair", "bed", "cabinet", "door", "windowpane", "sofa", "shelf",
+          "desk", "plate", "food", "counter", "kitchen"}
+
+
+def profile(scene: Scene) -> dict:
+    img = scene.img
+    faces = _faces(scene)
+    person = person_mask(scene)
+    face_share = max(((f["box"][2] - f["box"][0]) * (f["box"][3] - f["box"][1]) for f in faces), default=0.0)
+    person_share = float(person.mean()) if person is not None else 0.0
+    shares = {}
+    if segformer_available():
+        for c in scene.segment_summary():
+            shares[c["class"]] = shares.get(c["class"], 0) + c["share"]
+    outdoor = sum(v for k, v in shares.items() if k in OUTDOOR)
+    urban = sum(v for k, v in shares.items() if k in URBAN)
+    indoor = sum(v for k, v in shares.items() if k in INDOOR)
+    lum = luma(img)
+    night = float(lum.mean()) < 0.18 and float(np.percentile(lum, 99.5)) > 0.8
+    if len(faces) >= 3:
+        genre, hero = "group", "faces"
+    elif faces and (face_share > 0.03 or person_share > 0.2):
+        genre, hero = "portrait", "face"
+    elif person_share > 0.03 or faces:
+        genre, hero = "person in scene", "person"
+    elif night:
+        genre, hero = "night", "scene"
+    elif urban > 0.25 and urban >= outdoor * 0.6:
+        genre, hero = "city", "scene"
+    elif outdoor > 0.4:
+        genre, hero = "landscape", "scene"
+    elif indoor > 0.3 or shares:
+        genre, hero = "still life / interior", "subject"
+    else:
+        genre, hero = "unknown", "subject"
+    return {
+        "genre": genre,
+        "hero": hero,
+        "setting": "night" if night else "indoor" if indoor > outdoor + urban else "outdoor" if shares else "unknown",
+        "signals": {"faces": len(faces), "face_share": round(face_share, 3),
+                    "face_readable": bool(faces) and skin_mask(img, faces[0]["box"]) is not None, "person_share": round(person_share, 3),
+                    "outdoor_share": round(outdoor, 3), "urban_share": round(urban, 3), "indoor_share": round(indoor, 3),
+                    "mean_luma": round(float(lum.mean()), 3)},
+    }
+
+
 def subject_balance(scene: Scene):
-    person = _person(scene)
+    person = person_mask(scene)
     if person is None:
         return []
     stops = _stops(scene.img, person, 1 - person)
@@ -64,14 +132,36 @@ def subject_balance(scene: Scene):
     }]
 
 
+def separation(scene: Scene):
+    faces = _faces(scene)
+    person = person_mask(scene)
+    if not faces or person is None:
+        return []
+    if _stops(scene.img, person, 1 - person) <= -1.0:
+        return []
+    skin = skin_mask(scene.img, faces[0]["box"])
+    if skin is None:
+        return []
+    stops = _stops(scene.img, skin.astype(np.float32), 1 - person)
+    if stops >= -0.4:
+        return []
+    amount = round(float(np.clip(-stops * 0.3, 0.15, 0.5)), 2)
+    return [{
+        "finding": f"the background is {-stops:.1f} stops brighter than the face, so the eye goes to the background first",
+        "evidence": {"face_vs_background_stops": round(stops, 2)},
+        "step": {"name": "dim the background", "mask": {"type": "person", "invert": True, "grow": -0.002},
+                 "adjust": {"exposure": -amount, "highlights": -20}},
+    }]
+
+
 def face(scene: Scene):
     faces = scene.faces()
     if not faces:
         return []
-    H, W = scene.img.shape[:2]
-    x0, y0, x1, y1 = faces[0]["box"]
-    region = scene.img[int(y0 * H):int(y1 * H), int(x0 * W):int(x1 * W)]
-    face_luma = float(luma(region).mean()) if region.size else 1.0
+    skin = skin_mask(scene.img, faces[0]["box"])
+    if skin is None:
+        return []
+    face_luma = float(luma(scene.img)[skin].mean())
     if face_luma >= 0.32:
         return []
     return [{
@@ -100,11 +190,22 @@ def color_cast(scene: Scene):
         leans.append("warm (yellow)" if warm > 0 else "cool (blue)")
     if abs(tint) >= 8:
         leans.append("green" if green > 0 else "magenta")
-    adjust = {k: val for k, val in (("temp", temp), ("tint", tint)) if abs(val) >= 8}
+    evidence = {"log2_r_over_b": round(warm, 3), "log2_g_excess": round(green, 3),
+                "neutral_share": round(float(neutral.mean()), 3)}
+    note = "keep it if the cast is the grade"
+    floor = 8
+    faces = _faces(scene)
+    if faces and (hue := _skin_hue(img, faces[0]["box"])) is not None:
+        evidence["skin_hue"] = round(hue, 1)
+        if 8 <= hue <= 38:
+            temp, tint, floor = int(temp / 2), int(tint / 2), 5
+            note = "skin already reads natural, so only a light touch; skip it if the warmth is the mood"
+    adjust = {k: val for k, val in (("temp", temp), ("tint", tint)) if abs(val) >= floor}
+    if not adjust:
+        return []
     return [{
-        "finding": f"neutral greys lean {' and '.join(leans)}; keep it if the cast is the grade",
-        "evidence": {"log2_r_over_b": round(warm, 3), "log2_g_excess": round(green, 3),
-                     "neutral_share": round(float(neutral.mean()), 3)},
+        "finding": f"neutral greys lean {' and '.join(leans)}; {note}",
+        "evidence": evidence,
         "step": {"name": "neutralise cast (half strength)", "adjust": adjust},
     }]
 
@@ -114,7 +215,7 @@ def haze(scene: Scene):
         raise MissingCapability("needs SegFormer")
     small = resize(scene.img, 512, int(512 * scene.img.shape[0] / scene.img.shape[1]))
     dark = min_filter(small.min(-1), 7)
-    person = [{"type": "person", "grow": 0.01}] if _person(scene) is not None else []
+    person = [{"type": "person", "grow": 0.01}] if person_mask(scene) is not None else []
     out = []
     for cls in SCENERY:
         try:
@@ -169,7 +270,7 @@ def distractions(scene: Scene):
     for f in scene.faces() if scene_has_vision(scene) else []:
         x0, y0, x1, y1 = f["box"]
         cand[int(y0 * H):int(y1 * H), int(x0 * W):int(x1 * W)] = False
-    if (person := _person(scene)) is not None:
+    if (person := person_mask(scene)) is not None:
         person = (person > 0.5).astype(np.uint8)
         band = max(3, int(0.015 * S))
         outline = cv2.dilate(person, np.ones((band, band), np.uint8)) - cv2.erode(person, np.ones((band, band), np.uint8))
@@ -213,7 +314,7 @@ def crop(scene: Scene):
         if faces:
             x0, y0, x1, y1 = faces[0]["box"]
             anchor = [round((x0 + x1) / 2, 3), round((y0 + y1) / 2, 3)]
-        if (person := _person(scene)) is not None:
+        if (person := person_mask(scene)) is not None:
             ys, xs = np.nonzero(person > 0.5)
             box = [xs.min() / W, ys.min() / H, xs.max() / W, ys.max() / H]
         elif scene.vision().get("salient_boxes"):
@@ -239,7 +340,7 @@ def scene_has_vision(scene: Scene) -> bool:
         return False
 
 
-CHECKS = [exposure, subject_balance, face, color_cast, haze, sky, distractions, crop]
+CHECKS = [exposure, subject_balance, separation, face, color_cast, haze, sky, distractions, crop]
 
 
 def run(scene: Scene) -> dict:

@@ -154,6 +154,18 @@ def hsv_to_rgb(h, s, v) -> np.ndarray:
     return out
 
 
+def skin_mask(img: np.ndarray, box, min_share: float = 0.25, min_px: int = 50) -> np.ndarray | None:
+    H, W = img.shape[:2]
+    x0, y0, x1, y1 = box
+    region = np.zeros((H, W), bool)
+    region[max(0, int(y0 * H)):int(y1 * H), max(0, int(x0 * W)):int(x1 * W)] = True
+    h, s, v = rgb_to_hsv(img)
+    sel = region & ((h <= 50) | (h >= 340)) & (s > 0.12) & (s < 0.75) & (v > 0.12) & (v < 0.97)
+    if sel.sum() < max(min_px, min_share * region.sum()):
+        return None
+    return sel
+
+
 def smoothstep(e0, e1, x):
     t = np.clip((x - e0) / np.maximum(e1 - e0, 1e-6), 0, 1)
     return t * t * (3 - 2 * t)

@@ -39,6 +39,74 @@ PREPASS = ("heal", "dehaze", "texture", "clarity")
 LUT_SIZE = 1024
 CUBE_DIM = 32
 
+LOOKS = {
+    "natural": {"contrast": 8, "whites": 10, "blacks": -8, "vibrance": 12},
+    "bright-airy": {
+        "exposure": 0.3, "contrast": -12, "highlights": -25, "shadows": 30, "whites": 12, "blacks": 10,
+        "saturation": -8, "temp": 4,
+        "hsl": {"orange": {"lum": 6}, "green": {"sat": -20, "lum": 10}, "blue": {"sat": -10, "lum": 10}},
+    },
+    "warm-golden": {
+        "temp": 18, "tint": 4, "contrast": 8, "highlights": -15, "shadows": 10, "vibrance": 15,
+        "hsl": {"orange": {"sat": 8, "lum": 4}, "yellow": {"hue": -8, "sat": 10}, "green": {"hue": -10, "sat": -15},
+                "blue": {"sat": -20}},
+        "curve": [[0, 0.03], [0.5, 0.52], [1, 0.98]],
+    },
+    "moody": {
+        "exposure": -0.25, "contrast": 18, "highlights": -35, "shadows": -10, "blacks": -10, "saturation": -18,
+        "clarity": 10, "temp": -4,
+        "hsl": {"orange": {"sat": -5}, "yellow": {"sat": -30}, "green": {"hue": 15, "sat": -40, "lum": -20},
+                "aqua": {"sat": -20}, "blue": {"sat": -25, "lum": -20}},
+        "curve": [[0, 0.05], [0.25, 0.2], [0.75, 0.75], [1, 0.96]],
+    },
+    "film": {
+        "contrast": -5, "saturation": -12, "temp": 6, "tint": 3,
+        "hsl": {"red": {"hue": 5}, "orange": {"sat": -5}, "green": {"hue": 20, "sat": -25}, "blue": {"hue": -10, "sat": -15}},
+        "curve": [[0, 0.07], [0.25, 0.26], [0.75, 0.76], [1, 0.94]],
+    },
+    "cinematic": {
+        "contrast": 15, "highlights": -25, "temp": -6, "vibrance": 10,
+        "hsl": {"orange": {"hue": -4, "sat": 12}, "yellow": {"hue": -15, "sat": -10}, "green": {"hue": 40, "sat": -35},
+                "blue": {"hue": -25, "sat": 10, "lum": -10}},
+        "curve": [[0, 0.04], [0.3, 0.26], [0.7, 0.74], [1, 0.97]],
+    },
+    "punchy": {"contrast": 25, "whites": 15, "blacks": -18, "clarity": 18, "texture": 10, "vibrance": 28},
+    "mono": {
+        "saturation": -100, "contrast": 22, "whites": 12, "blacks": -15, "clarity": 12,
+        "hsl": {"orange": {"lum": 15}, "red": {"lum": 8}, "blue": {"lum": -25}, "aqua": {"lum": -15}, "green": {"lum": -10}},
+    },
+}
+
+
+def _scale_look(look: dict, k: float) -> dict:
+    out = {}
+    for key, v in look.items():
+        if key == "hsl":
+            out[key] = {band: {p: q * k for p, q in vals.items()} for band, vals in v.items()}
+        elif key == "curve":
+            out[key] = [[x, x + (y - x) * k] for x, y in v]
+        else:
+            out[key] = v * k
+    return out
+
+
+def step_adjust(step: dict) -> dict:
+    adjust = dict(step.get("adjust", {}))
+    name = step.get("look")
+    if not name:
+        return adjust
+    if name not in LOOKS:
+        raise ValueError(f"unknown look '{name}'; use one of {list(LOOKS)}")
+    amount = min(max(float(step.get("amount", 100)), 0), 200) / 100
+    merged = _scale_look(LOOKS[name], amount)
+    hsl = {band: dict(vals) for band, vals in merged.get("hsl", {}).items()}
+    for band, vals in adjust.pop("hsl", {}).items():
+        hsl.setdefault(band, {}).update(vals)
+    merged.update(adjust)
+    if hsl:
+        merged["hsl"] = hsl
+    return merged
+
 
 def validate(adjust: dict) -> list[str]:
     warnings = []

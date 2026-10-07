@@ -11,10 +11,11 @@ from PIL import Image, JpegImagePlugin
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "feedready" / "scripts"))
 
+import critique
 import develop
 import masks
 from detect import Scene, edgetam_available, engine_available, migan_available
-from imaging import gaussian, icc_profile, is_p3, load_rgb, luma, rgb_to_hsv, save_png16, srgb_to_linear
+from imaging import gaussian, icc_profile, is_p3, load_rgb, luma, rgb_to_hsv, save_png16, skin_mask, srgb_to_linear
 
 ROOT = Path(__file__).resolve().parents[1]
 P3_ICC = Path("/System/Library/ColorSync/Profiles/Display P3.icc")
@@ -133,11 +134,20 @@ def main():
                      src, tmp / f"zero_{renderer}.png")
         check("empty mask changes nothing", float(np.abs(out - base).max()) <= 1.5 / 255)
 
+        out = _apply(renderer, {"steps": [{"look": "mono"}]}, src, tmp / f"mono_{renderer}.png")
+        check("mono look renders black and white", metrics(out)["sat"] < 0.05, f"sat {metrics(out)['sat']:.3f}")
+        _loop(renderer, tmp, src)
+
         gray = np.full((64, 64, 3), 0.3, np.float32)
         save_png16(gray, tmp / "gray.png")
         out = _apply(renderer, {"steps": [{"adjust": {"exposure": 1}}]}, tmp / "gray.png", tmp / f"gray_{renderer}.png")
         ratio = float(srgb_to_linear(out).mean() / srgb_to_linear(gray).mean())
         check("exposure +1 doubles linear light", abs(ratio - 2) < 0.03, f"ratio {ratio:.3f}")
+
+    print("[looks + critique]")
+    _looks()
+    _halo()
+    _faces()
 
     print("[diagnostics]")
     _diagnostics(tmp)
@@ -190,6 +200,106 @@ def _diagnostics(tmp):
     clean = _findings(tmp, "clean", card())
     check("a well-exposed neutral card gets no exposure or cast findings",
           "exposure" not in clean and "color_cast" not in clean, str(sorted(clean)))
+
+
+def _cli(renderer, cmd, **kw):
+    if renderer == "core-image":
+        argv = {"preview": lambda: [kw["recipe"], kw["image"], "--note", kw.get("note", "")],
+                "board": lambda: [kw["image"], *kw["recipes"]],
+                "apply": lambda: [kw["recipe"], kw["image"], "-o", kw["output"]]}[cmd]()
+        res = subprocess.run([sys.executable, str(ROOT / "skills" / "feedready" / "scripts" / "feedready.py"), cmd, *argv],
+                             capture_output=True, text=True)
+        if res.returncode:
+            raise RuntimeError(res.stderr or res.stdout)
+        return json.loads(res.stdout)
+    import feedready
+
+    feedready.tier = lambda: "basic"
+
+    class Args:
+        pass
+
+    args = Args()
+    args.__dict__.update({"note": "", **kw})
+    return {"preview": feedready.cmd_preview, "board": feedready.cmd_board, "apply": feedready.cmd_apply}[cmd](args)
+
+
+def _loop(renderer, tmp, src):
+    first = {"steps": [{"name": "warm grade", "look": "warm-golden", "amount": 80},
+                       {"name": "nothing", "adjust": {"temp": 1}}]}
+    r1 = _cli(renderer, "preview", recipe=json.dumps(first), image=str(src), note="first")
+    n = int(r1["version"][1:])
+    files = [r1[k] for k in ("preview", "compare", "map", "cards", "review")]
+    check("preview writes the version, compare, map, cards and review page", all(Path(f).exists() for f in files))
+    levels = [i["level"] for i in r1["impact"]]
+    check("impact sees the look and rates the no-op as none", levels[0] != "none" and levels[1] == "none",
+          str(levels))
+    check("critique flags the step that does nothing", any("'nothing'" in i["issue"] for i in r1["critique"]["issues"]),
+          str([i["issue"] for i in r1["critique"]["issues"]]))
+    second = {**first, "steps": first["steps"][:1] + [{"name": "brighter", "adjust": {"exposure": 0.3}}]}
+    r2 = _cli(renderer, "preview", recipe=json.dumps(second), image=str(src), note="brighter")
+    check("the next preview is the next version with a diff against the last", r2["version"] == f"v{n + 1}"
+          and r2["diff"] is not None and Path(r2["diff"]).exists(), f"{r1['version']} -> {r2['version']}")
+    out = tmp / f"from_version_{renderer}.png"
+    _cli(renderer, "apply", recipe=r2["version"], image=str(src), output=str(out))
+    exported = load_rgb(out)
+    check("apply renders a saved version at full resolution", exported.shape[:2] == (400, 600), str(exported.shape[:2]))
+    natural = json.dumps({"label": "N", "steps": [{"look": "natural"}]})
+    mono = json.dumps({"label": "M", "steps": [{"look": "mono"}]})
+    board = _cli(renderer, "board", image=str(src), recipes=[natural, natural, mono])
+    check("board flags look-alike directions and not distinct ones", Path(board["board"]).exists()
+          and any("N and N" in t for t in board["too_similar"]) and not any("M" in t for t in board["too_similar"]),
+          str(board["too_similar"]))
+
+
+def _looks():
+    half = develop.step_adjust({"look": "moody", "amount": 50})
+    check("look amount scales the grade", abs(half["exposure"] + 0.125) < 1e-9 and half["hsl"]["green"]["sat"] == -20,
+          str({k: half[k] for k in ("exposure",)}))
+    over = develop.step_adjust({"look": "moody", "adjust": {"exposure": 0.1, "hsl": {"green": {"lum": 5}}}})
+    check("adjust overrides the look and merges hsl bands", over["exposure"] == 0.1
+          and over["hsl"]["green"] == {"hue": 15, "sat": -40, "lum": 5}, str(over["hsl"]["green"]))
+    zero = develop.step_adjust({"look": "film", "amount": 0})
+    check("amount 0 is a no-op curve", all(abs(x - y) < 1e-9 for x, y in zero["curve"]))
+    try:
+        develop.step_adjust({"look": "vaporwave"})
+        check("unknown look is rejected", False)
+    except ValueError:
+        check("unknown look is rejected", True)
+
+
+def _halo():
+    h, w = 300, 300
+    yy, xx = np.mgrid[0:h, 0:w]
+    person = (np.hypot(xx - 150, yy - 150) < 60).astype(np.float32)
+    before = np.full((h, w, 3), 0.6, np.float32)
+    after = before * 0.5
+    ring = (np.hypot(xx - 150, yy - 150) < 66) & (person == 0)
+    after[ring] = 0.6
+    after[person > 0] = 0.6
+    clean = before * 0.5
+    clean[person > 0] = 0.6
+    check("critique catches a bright halo around the subject", (critique._halo(before, after, person) or 0) > 0.2,
+          f"{critique._halo(before, after, person):.2f}")
+    check("critique leaves a clean background move alone", abs(critique._halo(before, clean, person) or 0) < 0.1)
+
+
+def _faces():
+    h, w = 300, 300
+    box = [0.4, 0.3, 0.6, 0.5]
+    skin = np.full((h, w, 3), 0.85, np.float32)
+    skin[90:150, 120:180] = (0.45, 0.3, 0.22)
+    covered = skin.copy()
+    covered[90:150, 120:180] = (0.04, 0.04, 0.05)
+    covered[90:96, 125:175] = (0.45, 0.3, 0.22)
+    check("skin_mask finds an uncovered face", skin_mask(skin, box) is not None)
+    check("skin_mask gives up on a covered face", skin_mask(covered, box) is None)
+    res = critique.run(skin, skin, [box], None, 0, [], [])
+    check("critique flags a face darker than its background", any("darker than the background" in i["issue"] for i in res["issues"]),
+          str([i["issue"] for i in res["issues"]]))
+    res = critique.run(covered, covered, [box], None, 0, [], [])
+    check("critique skips face checks on a covered face instead of measuring fabric",
+          res["skipped"] and not any("face" in i["issue"] for i in res["issues"]), str(res))
 
 
 def _iou(m, truth):

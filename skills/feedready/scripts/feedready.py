@@ -4,17 +4,19 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import develop
+import critique
 import diagnose
 import masks as maskmod
+import render
+import review
 from detect import (
     CACHE,
     MissingCapability,
@@ -26,23 +28,30 @@ from detect import (
     run_engine,
     segformer_available,
 )
-from imaging import cv2, icc_profile, is_p3, load_rgb, luma, save_jpeg, save_mask, save_png16, to_u8
+from imaging import cv2, icc_profile, is_p3, load_rgb, luma, save_jpeg, save_png16
 
-USAGE = """feedready: apply Claude's photo-edit recipe and export a post-ready image.
+USAGE = """feedready: render Claude's photo-edit recipes, version by version, and export a post-ready image.
 
   feedready.py doctor
-  feedready.py inspect IMG                 grid overlay + stats + detections (JSON)
-  feedready.py masks RECIPE IMG            contact sheet of every step's mask
-  feedready.py apply RECIPE IMG [-o OUT]   render final JPEG + before/after compare
+  feedready.py inspect IMG                       grid overlay + stats + profile + findings (JSON)
+  feedready.py masks RECIPE IMG                  contact sheet of every step's mask
+  feedready.py board IMG RECIPE [RECIPE ...]     original + each recipe side by side (directions, versions)
+  feedready.py preview RECIPE IMG [--note TEXT]  screen-size render saved as the next version, with critique
+  feedready.py apply RECIPE IMG [-o OUT]         full-resolution export + before/after compare
 
-RECIPE is a path to a JSON file or an inline JSON string (reference/recipe.md).
-Mac tier renders with Core Image + Vision (feedready-engine); elsewhere a numpy
-fallback renders the subset that needs no models.
+RECIPE is a path to a JSON file, an inline JSON string (reference/recipe.md), or a
+saved version such as v3. Mac tier renders with Core Image + Vision (feedready-engine);
+elsewhere a numpy fallback renders the subset that needs no models.
 """
 
 CLAUDE_OUTPUTS = Path("/mnt/user-data/outputs")
 LARGE_MEGAPIXELS = 30
 WORKING_COPY_VERSION = 2
+PREVIEW_EDGE = 1600
+SINGLE_EDGE = 900
+BOARD_EDGE = 900
+SIMILAR = 0.025
+VERSION = re.compile(r"[vV]\d+")
 
 
 def tier() -> str:
@@ -78,45 +87,34 @@ def wide_profile(working: Path) -> bytes | None:
     return icc if is_p3(icc) else None
 
 
-def load_recipe(arg: str) -> dict:
-    text = arg if arg.lstrip().startswith("{") else Path(arg).expanduser().read_text()
-    recipe = json.loads(text)
+def versions_dir(work: Path) -> Path:
+    return work / "versions"
+
+
+def version_numbers(work: Path) -> list[int]:
+    return sorted(int(p.stem[1:]) for p in versions_dir(work).glob("v*.json") if re.fullmatch(r"v\d+", p.stem))
+
+
+def version_index(work: Path) -> dict:
+    path = versions_dir(work) / "index.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def load_recipe(arg: str, work: Path) -> dict:
+    if VERSION.fullmatch(arg.strip()):
+        path = versions_dir(work) / f"v{int(arg.strip()[1:])}.json"
+        if not path.exists():
+            have = ", ".join(f"v{n}" for n in version_numbers(work)) or "none yet"
+            raise render.fail(f"no version {arg} for this photo (saved: {have})")
+        recipe = json.loads(path.read_text())
+    else:
+        text = arg if arg.lstrip().startswith("{") else Path(arg).expanduser().read_text()
+        try:
+            recipe = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise render.fail(f"recipe is not valid JSON: {e}")
     recipe.setdefault("steps", [])
     return recipe
-
-
-def _font(size: int):
-    for name in ("/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc", "DejaVuSans.ttf"):
-        try:
-            return ImageFont.truetype(name, size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
-
-
-def _thumb(img: np.ndarray, long_edge: int) -> Image.Image:
-    im = Image.fromarray(to_u8(img))
-    im.thumbnail((long_edge, long_edge), Image.LANCZOS)
-    return im
-
-
-def grid_image(img: np.ndarray, scene: Scene | None, path: Path, icc: bytes | None = None) -> None:
-    im = _thumb(img, 1400).convert("RGB")
-    W, H = im.size
-    draw = ImageDraw.Draw(im, "RGBA")
-    font = _font(max(12, W // 60))
-    for i in range(1, 10):
-        x, y = W * i / 10, H * i / 10
-        width = 2 if i == 5 else 1
-        draw.line([(x, 0), (x, H)], fill=(255, 255, 0, 150), width=width)
-        draw.line([(0, y), (W, y)], fill=(255, 255, 0, 150), width=width)
-        draw.text((x + 3, 3), f".{i}", fill=(255, 255, 0, 255), font=font, stroke_width=2, stroke_fill=(0, 0, 0, 255))
-        draw.text((3, y + 2), f".{i}", fill=(255, 255, 0, 255), font=font, stroke_width=2, stroke_fill=(0, 0, 0, 255))
-    if scene is not None and tier() == "mac":
-        for f in scene.faces():
-            x0, y0, x1, y1 = f["box"]
-            draw.rectangle([x0 * W, y0 * H, x1 * W, y1 * H], outline=(0, 255, 255, 255), width=2)
-    im.save(path, quality=90, icc_profile=icc)
 
 
 def stats(img: np.ndarray) -> dict:
@@ -166,9 +164,11 @@ def cmd_inspect(args) -> dict:
     out.update(_resolution(img, src))
     icc = wide_profile(working)
     out["color_space"] = "display-p3" if icc else "srgb"
+    faces = []
     if tier() == "mac":
         v = scene.vision()
-        out["faces"] = [{k: f.get(k) for k in ("box", "left_pupil", "right_pupil", "confidence")} for f in v.get("faces", [])]
+        faces = v.get("faces", [])
+        out["faces"] = [{k: f.get(k) for k in ("box", "left_pupil", "right_pupil", "confidence")} for f in faces]
         out["person_mask"] = bool(v.get("person"))
         out["subject_instances"] = v.get("subject_instances", 0)
         out["salient_boxes"] = v.get("salient_boxes", [])
@@ -176,9 +176,13 @@ def cmd_inspect(args) -> dict:
             out["horizon_degrees"] = round(v["horizon_degrees"], 2)
     if segformer_available():
         out["scene_classes"] = scene.segment_summary()
+    out["profile"] = diagnose.profile(scene)
     out["diagnostics"] = diagnose.run(scene)
+    if numbers := version_numbers(work):
+        index = version_index(work)
+        out["previous_versions"] = [{"version": f"v{n}", "note": index.get(str(n), {}).get("note", "")} for n in numbers]
     grid = work / "grid.jpg"
-    grid_image(img, scene, grid, icc)
+    review.grid_image(img, faces, grid, icc)
     out["grid"] = str(grid)
     out["original"] = str(working)
     return out
@@ -193,9 +197,9 @@ def _resolution(img: np.ndarray, src: Path) -> dict:
     }
 
 
-def _step_masks(recipe: dict, scene: Scene) -> list[np.ndarray | None]:
+def _step_masks(steps: list[dict], scene: Scene) -> list[np.ndarray | None]:
     result = []
-    for i, step in enumerate(recipe["steps"]):
+    for i, step in enumerate(steps):
         try:
             result.append(maskmod.build(step.get("mask"), scene))
         except (MissingCapability, ValueError) as e:
@@ -204,202 +208,212 @@ def _step_masks(recipe: dict, scene: Scene) -> list[np.ndarray | None]:
 
 
 def cmd_masks(args) -> dict:
-    recipe = load_recipe(args.recipe)
-    work, working, img = prepare(Path(args.image).expanduser())
+    src = Path(args.image).expanduser()
+    work, working, img = prepare(src)
+    recipe = load_recipe(args.recipe, work)
     scene = Scene(work, working, img)
-    built = _step_masks(recipe, scene)
-    tiles = []
-    font = _font(22)
-    for i, (step, m) in enumerate(zip(recipe["steps"], built)):
-        base = img.copy()
-        if m is not None:
-            base = base * (1 - 0.6 * m[..., None]) + np.array([1.0, 0.1, 0.1]) * 0.6 * m[..., None]
-        tile = _thumb(base, 520)
-        ImageDraw.Draw(tile).text((8, 6), f"{i + 1}. {step.get('name', '')}"[:40], fill="white", font=font,
-                                  stroke_width=3, stroke_fill="black")
-        tiles.append(tile)
-    if not tiles:
+    built = _step_masks(recipe["steps"], scene)
+    if not built:
         return {"error": "recipe has no steps"}
-    cols = min(3, len(tiles))
-    rows = -(-len(tiles) // cols)
-    tw, th = tiles[0].size
-    sheet = Image.new("RGB", (cols * tw + (cols - 1) * 6, rows * th + (rows - 1) * 6), "white")
-    for i, t in enumerate(tiles):
-        sheet.paste(t, ((i % cols) * (tw + 6), (i // cols) * (th + 6)))
     path = work / "masks.jpg"
-    sheet.save(path, quality=88, icc_profile=wide_profile(working))
+    review.mask_sheet(img, recipe["steps"], built, path, wide_profile(working))
     coverage = [None if m is None else round(float(m.mean()), 3) for m in built]
     return {"contact_sheet": str(path), "mask_coverage": coverage, "notes": scene.notes}
 
 
-def _prepass(img, recipe, built):
-    changed = False
-    for step, m in zip(recipe["steps"], built):
-        adj = step.get("adjust", {})
-        weight = 1.0 if m is None else m[..., None]
-        if adj.get("heal"):
-            if m is None:
-                raise SystemExit(json.dumps({"error": "heal needs a mask (brush dots over the spots)"}))
-            img = develop.heal(img, m)
-            changed = True
-        if d := adj.get("dehaze"):
-            img = img + (develop.dehaze(img, d / 100) - img) * weight
-            changed = True
-        for kind in ("texture", "clarity"):
-            if v := adj.get(kind):
-                img = img + (develop.local_contrast(img, kind, v / 100) - img) * weight
-                changed = True
-    return np.clip(img, 0, 1), changed
+class Session:
+    def __init__(self, src: Path):
+        self.src = src
+        self.work, self.working, self.img = prepare(src)
+        self.scene = Scene(self.work, self.working, self.img)
+        self.icc = wide_profile(self.working)
+        self.engine = tier() == "mac"
+        self.stage = self.work / "stage"
+        self.stage.mkdir(exist_ok=True)
 
+    def recipe(self, arg: str) -> dict:
+        return load_recipe(arg, self.work)
 
-def _output_geometry(recipe, W, H):
-    preset = develop.PRESETS.get(recipe.get("preset", "original"))
-    if preset is None:
-        raise SystemExit(json.dumps({"error": f"unknown preset; use one of {list(develop.PRESETS)}"}))
-    try:
-        crop = develop.crop_rect(W, H, recipe.get("crop"), preset["aspect"])
-    except (ValueError, TypeError) as e:
-        raise SystemExit(json.dumps({"error": f"crop: {e}"}))
-    cw, ch = (crop[2], crop[3]) if crop else (W, H)
-    resize = None
-    if (max_edge := recipe.get("max_edge")) is not None:
-        if not isinstance(max_edge, (int, float)) or max_edge < 64:
-            raise SystemExit(json.dumps({"error": "max_edge: give the long edge in pixels, at least 64"}))
-        scale = max_edge / max(cw, ch)
-        if scale < 1:
-            resize = [max(1, round(cw * scale)), max(1, round(ch * scale))]
-    return crop, resize
+    def prepare_steps(self, recipe: dict):
+        steps, warnings = render.resolve(recipe)
+        return steps, _step_masks(steps, self.scene), warnings
+
+    def scaled(self, built: list, edge: int):
+        small, small_masks = render.downscale(self.img, built, edge)
+        if not self.engine:
+            return small, small_masks, None
+        path = self.stage / f"base-{small.shape[1]}x{small.shape[0]}.png"
+        if not path.exists():
+            save_png16(small, path, self.icc)
+        return small, small_masks, path
+
+    def render(self, img, steps, built, recipe, out, tag, source, **kw):
+        return render.render(img, steps, built, recipe, out, stage=self.stage, tag=tag, engine=self.engine,
+                             icc=self.icc, source=source, **kw)
 
 
 def cmd_apply(args) -> dict:
-    recipe = load_recipe(args.recipe)
-    src = Path(args.image).expanduser()
-    work, working, img = prepare(src)
-    scene = Scene(work, working, img)
-    warnings = []
-    for step in recipe["steps"]:
-        warnings += develop.validate(step.setdefault("adjust", {}))
-    built = _step_masks(recipe, scene)
-    H, W = img.shape[:2]
-    long_edge = max(H, W)
-    icc = wide_profile(working)
-
-    pre, changed = _prepass(img, recipe, built)
-    input_png = working
-    if changed:
-        input_png = work / "prepass.png"
-        save_png16(pre, input_png, icc)
-
-    crop, resize = _output_geometry(recipe, W, H)
-    vig = recipe.get("vignette", 0)
-    vignette = {"intensity": -vig / 100, "radius": 1.0, "falloff": 0.6} if vig else None
-
+    s = Session(Path(args.image).expanduser())
+    recipe = s.recipe(args.recipe)
+    steps, built, warnings = s.prepare_steps(recipe)
     out_dir = output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = Path(args.output).expanduser() if args.output else out_dir / f"{src.stem}-{recipe.get('preset', 'edit')}.jpg"
-
-    steps_ops = [develop.build_ops(s["adjust"], long_edge) for s in recipe["steps"]]
-    if tier() == "mac":
-        _render_ci(work, input_png, recipe, built, steps_ops, crop, resize, vignette, out, icc is not None)
-    else:
-        _render_np(pre, built, steps_ops, crop, resize, vignette, out, recipe.get("quality", 100), icc)
-
+    ref = args.recipe.strip()
+    suffix = ref.lower() if VERSION.fullmatch(ref) else recipe.get("preset", "edit")
+    out = Path(args.output).expanduser() if args.output else out_dir / f"{s.src.stem}-{suffix}.jpg"
+    crop = render.render(s.img, steps, built, recipe, out, stage=s.work, tag="apply", engine=s.engine, icc=s.icc,
+                         source=s.working)
     result = load_rgb(out)
-    before = img if crop is None else img[crop[1]:crop[1] + crop[3], crop[0]:crop[0] + crop[2]]
+    before = render.frame(s.img, crop)
     compare = out.with_name(out.stem + "-compare.jpg")
-    _compare(before, result, compare, icc)
-    (work / "last_recipe.json").write_text(json.dumps(recipe, indent=2))
+    review.pair(before, result, ("before", "after"), compare, s.icc)
+    (s.work / "last_recipe.json").write_text(json.dumps(recipe, indent=2))
     return {
         "output": str(out),
         "compare": str(compare),
         "size": [result.shape[1], result.shape[0]],
         "file_mb": round(out.stat().st_size / 1e6, 1),
-        "color_space": "display-p3" if icc else "srgb",
-        "renderer": "core-image" if tier() == "mac" else "numpy",
+        "color_space": "display-p3" if s.icc else "srgb",
+        "renderer": "core-image" if s.engine else "numpy",
         "before": stats(before),
         "after": stats(result),
         "warnings": warnings,
-        "notes": scene.notes,
+        "notes": s.scene.notes,
     }
 
 
-def _render_ci(work, input_png, recipe, built, steps_ops, crop, resize, vignette, out, p3):
-    (work / "masks").mkdir(exist_ok=True)
-    (work / "luts").mkdir(exist_ok=True)
-    plan_steps = []
-    for i, (m, ops) in enumerate(zip(built, steps_ops)):
-        if not ops:
-            continue
-        serial = []
-        for op in ops:
-            op = dict(op)
-            if op["op"] == "curves":
-                path = work / "luts" / f"s{i}_curve.bin"
-                np.repeat(op.pop("lut"), 3).astype(np.float32).tofile(path)
-                op["lut"] = str(path.relative_to(work))
-            elif op["op"] == "cube":
-                path = work / "luts" / f"s{i}_cube.bin"
-                develop.hsl_cube(op.pop("hsl")).tofile(path)
-                op.update(lut=str(path.relative_to(work)), dim=develop.CUBE_DIM)
-            serial.append(op)
-        step = {"ops": serial}
-        if m is not None:
-            mp = work / "masks" / f"step{i}.png"
-            save_mask(m, mp)
-            step["mask"] = str(mp.relative_to(work))
-        plan_steps.append(step)
-    plan = {
-        "input": str(Path(input_png).relative_to(work)),
-        "output": str(out),
-        "quality": recipe.get("quality", 100) / 100,
-        "steps": plan_steps,
-        "crop": list(crop) if crop else None,
-        "resize": resize,
-        "vignette": vignette,
-        "p3": p3,
+def _frame_faces(scene: Scene, crop, W: int, H: int) -> list[list[float]]:
+    try:
+        faces = scene.faces()
+    except MissingCapability:
+        return []
+    x, y, w, h = crop if crop else (0, 0, W, H)
+    out = []
+    for f in faces:
+        x0, y0, x1, y1 = f["box"]
+        box = [(x0 * W - x) / w, (y0 * H - y) / h, (x1 * W - x) / w, (y1 * H - y) / h]
+        if box[2] > 0 and box[3] > 0 and box[0] < 1 and box[1] < 1:
+            out.append([min(max(v, 0.0), 1.0) for v in box])
+    return out
+
+
+def _frame_person(scene: Scene, small: np.ndarray, crop) -> np.ndarray | None:
+    person = diagnose.person_mask(scene)
+    if person is None:
+        return None
+    H, W = small.shape[:2]
+    _, (scaled,) = render.downscale(scene.img, [person], max(H, W))
+    return render.frame(scaled, crop)
+
+
+def _singles(s: Session, recipe: dict, steps: list[dict], built: list):
+    tiny, tiny_masks, source = s.scaled(built, SINGLE_EDGE)
+    singles, impacts = [], []
+    for i, (step, m) in enumerate(zip(steps, tiny_masks)):
+        out = s.stage / f"single-{i}.png"
+        s.render(tiny, [step], [m], {"steps": [step]}, out, f"single{i}", source, framed=False)
+        alone = load_rgb(out)
+        imp = critique.impact(tiny, alone, m)
+        impacts.append(imp)
+        raw = recipe["steps"][i]
+        singles.append({"index": i, "name": step.get("name", f"step {i + 1}"), "why": step.get("why", ""),
+                        "summary": review.describe(raw.get("adjust", {}), raw.get("look"), raw.get("amount")),
+                        "after": alone, "mask": m, **imp})
+    return tiny, singles, impacts
+
+
+def cmd_preview(args) -> dict:
+    s = Session(Path(args.image).expanduser())
+    recipe = s.recipe(args.recipe)
+    steps, built, warnings = s.prepare_steps(recipe)
+    vdir = versions_dir(s.work)
+    vdir.mkdir(exist_ok=True)
+    previous = version_numbers(s.work)
+    n = (previous[-1] if previous else 0) + 1
+    tag = f"v{n}"
+
+    small, small_masks, source = s.scaled(built, PREVIEW_EDGE)
+    out = vdir / f"{tag}.jpg"
+    crop = s.render(small, steps, small_masks, recipe, out, "preview", source, full_size=False)
+    after = load_rgb(out)
+    before = render.frame(small, crop)
+    before_path = vdir / ("before-" + "-".join(map(str, crop or (0, 0, small.shape[1], small.shape[0]))) + ".jpg")
+    if not before_path.exists():
+        save_jpeg(before, before_path, 92, s.icc)
+
+    tiny, singles, impacts = _singles(s, recipe, steps, built)
+    faces = _frame_faces(s.scene, crop, small.shape[1], small.shape[0]) if s.engine else []
+    person = _frame_person(s.scene, small, crop) if s.engine else None
+    verdict = critique.run(before, after, faces, person, recipe.get("vignette", 0), steps, impacts)
+
+    compare = vdir / f"{tag}-compare.jpg"
+    review.pair(before, after, ("before", tag), compare, s.icc)
+    diff = None
+    if previous:
+        last = f"v{previous[-1]}"
+        diff = vdir / f"{last}-{tag}.jpg"
+        review.pair(load_rgb(vdir / f"{last}.jpg"), after, (last, tag), diff, s.icc)
+    edit_map = vdir / f"{tag}-map.jpg"
+    review.edit_map(small, steps, small_masks, edit_map, s.icc)
+    cards = None
+    if singles:
+        cards = vdir / f"{tag}-cards.jpg"
+        review.cards(tiny, singles, cards, s.icc)
+
+    (vdir / f"{tag}.json").write_text(json.dumps(recipe, indent=2))
+    index = version_index(s.work)
+    index[str(n)] = {"note": args.note, "before": before_path.name, "verdict": verdict["verdict"]}
+    (vdir / "index.json").write_text(json.dumps(index, indent=2))
+    page = s.work / "review.html"
+    review.review_html(f"{s.src.stem} · {tag}", [
+        {"n": k, "note": index.get(str(k), {}).get("note", ""), "after": vdir / f"v{k}.jpg",
+         "before": vdir / index.get(str(k), {}).get("before", before_path.name)}
+        for k in version_numbers(s.work)], page)
+
+    return {
+        "version": tag,
+        "preview": str(out),
+        "compare": str(compare),
+        "diff": str(diff) if diff else None,
+        "map": str(edit_map),
+        "cards": str(cards) if cards else None,
+        "review": str(page),
+        "critique": verdict,
+        "impact": [{"step": i + 1, "name": st.get("name", ""), "level": imp["level"], "delta": imp["delta"],
+                    "reach": imp["reach"]} for i, (st, imp) in enumerate(zip(steps, impacts))],
+        "after": stats(after),
+        "warnings": warnings,
+        "notes": s.scene.notes,
     }
-    plan_path = work / "plan.json"
-    plan_path.write_text(json.dumps(plan, indent=2))
-    run_engine("render", str(plan_path))
 
 
-def _render_np(img, built, steps_ops, crop, resize, vignette, out, quality, icc):
-    for m, ops in zip(built, steps_ops):
-        adjusted = img
-        for op in ops:
-            adjusted = develop.np_apply_op(adjusted, op)
-        img = adjusted if m is None else img + (adjusted - img) * m[..., None]
-        img = np.clip(img, 0, 1)
-    if crop:
-        x, y, w, h = crop
-        img = img[y:y + h, x:x + w]
-    if resize:
-        im = Image.fromarray(to_u8(img)).resize(tuple(resize), Image.LANCZOS)
-        img = np.asarray(im, np.float32) / 255
-    if vignette:
-        H, W = img.shape[:2]
-        yy, xx = np.mgrid[0:H, 0:W]
-        d = np.hypot(xx - W / 2, yy - H / 2) / (np.hypot(W, H) / 2 * vignette["radius"])
-        fall = np.clip((d - (1 - vignette["falloff"])) / vignette["falloff"], 0, 1) ** 2
-        img = img * (1 - vignette["intensity"] * 0.8 * fall)[..., None]
-    if Path(out).suffix.lower() == ".png":
-        save_png16(img, out, icc)
-    else:
-        save_jpeg(img, out, quality, icc)
-
-
-def _compare(before, after, path, icc=None, height=900):
-    a, b = _thumb(before, 4000), _thumb(after, 4000)
-    a = a.resize((int(a.width * height / a.height), height), Image.LANCZOS)
-    b = b.resize((int(b.width * height / b.height), height), Image.LANCZOS)
-    sheet = Image.new("RGB", (a.width + b.width + 8, height), "white")
-    sheet.paste(a, (0, 0))
-    sheet.paste(b, (a.width + 8, 0))
-    draw = ImageDraw.Draw(sheet)
-    font = _font(26)
-    for x, label in ((10, "before"), (a.width + 18, "after")):
-        draw.text((x, 8), label, fill="white", font=font, stroke_width=3, stroke_fill="black")
-    sheet.save(path, quality=90, icc_profile=icc)
+def cmd_board(args) -> dict:
+    s = Session(Path(args.image).expanduser())
+    tiles = [("original", "as shot", render.downscale(s.img, [], BOARD_EDGE)[0])]
+    index = version_index(s.work)
+    for i, arg in enumerate(args.recipes):
+        recipe = s.recipe(arg)
+        steps, built, _ = s.prepare_steps(recipe)
+        small, small_masks, source = s.scaled(built, BOARD_EDGE)
+        out = s.stage / f"board-{i}.png"
+        s.render(small, steps, small_masks, recipe, out, f"board{i}", source, full_size=False)
+        ref = arg.strip()
+        is_version = VERSION.fullmatch(ref) is not None
+        if is_version:
+            title, note = f"v{int(ref[1:])}", index.get(str(int(ref[1:])), {}).get("note", "")
+        else:
+            title, note = recipe.get("label") or chr(ord("A") + i), recipe.get("note", "")
+        if not note:
+            note = ", ".join(f"{st['look']} look" if st.get("look") else st.get("name", "") for st in recipe["steps"])
+        tiles.append((title, note, load_rgb(out)))
+    path = s.work / "board.jpg"
+    review.board(tiles, path, s.icc)
+    pairs = critique.distinctness([t[2] for t in tiles])
+    names = [t[0] for t in tiles]
+    alike = [f"{names[i]} and {names[j]} look alike (difference {d})" for (i, j), d in
+             ((pr["pair"], pr["delta"]) for pr in pairs) if d < SIMILAR]
+    return {"board": str(path), "tiles": names, "too_similar": alike,
+            "differences": {f"{names[pr['pair'][0]]} | {names[pr['pair'][1]]}": pr["delta"] for pr in pairs}}
 
 
 def main():
@@ -411,12 +425,20 @@ def main():
     p = sub.add_parser("masks")
     p.add_argument("recipe")
     p.add_argument("image")
+    p = sub.add_parser("board")
+    p.add_argument("image")
+    p.add_argument("recipes", nargs="+")
+    p = sub.add_parser("preview")
+    p.add_argument("recipe")
+    p.add_argument("image")
+    p.add_argument("--note", default="")
     p = sub.add_parser("apply")
     p.add_argument("recipe")
     p.add_argument("image")
     p.add_argument("-o", "--output")
     args = ap.parse_args()
-    handler = {"doctor": cmd_doctor, "inspect": cmd_inspect, "masks": cmd_masks, "apply": cmd_apply}[args.cmd]
+    handler = {"doctor": cmd_doctor, "inspect": cmd_inspect, "masks": cmd_masks, "board": cmd_board,
+               "preview": cmd_preview, "apply": cmd_apply}[args.cmd]
     print(json.dumps(handler(args), indent=2))
 
 
