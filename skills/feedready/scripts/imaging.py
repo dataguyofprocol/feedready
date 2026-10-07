@@ -1,9 +1,3 @@
-"""Image I/O and numpy primitives shared by every tier.
-
-Hard dependencies: numpy + Pillow. cv2 / pillow-heif are used when present.
-Images are float32 HxWx3 sRGB-encoded in [0, 1]; masks are float32 HxW in [0, 1].
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -23,8 +17,7 @@ except ImportError:
 
 
 def load_rgb(path) -> np.ndarray:
-    """Read any image (8/16-bit PNG, JPEG, HEIC) as oriented float32 sRGB."""
-    if cv2 is not None and str(path).lower().endswith(".png"):
+    if cv2 is not None and str(path).lower().endswith(".png") and _plain_png(path):
         raw = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
         if raw is not None:
             scale = 65535.0 if raw.dtype == np.uint16 else 255.0
@@ -45,6 +38,23 @@ def load_rgb(path) -> np.ndarray:
         except Exception:
             pass
     return np.asarray(im, dtype=np.float32) / 255.0
+
+
+def _plain_png(path) -> bool:
+    with Image.open(path) as im:
+        if im.getexif().get(0x0112, 1) != 1:
+            return False
+        icc = im.info.get("icc_profile")
+    if not icc:
+        return True
+    try:
+        from io import BytesIO
+
+        from PIL import ImageCms
+
+        return "srgb" in ImageCms.getProfileDescription(ImageCms.ImageCmsProfile(BytesIO(icc))).lower()
+    except Exception:
+        return False
 
 
 def load_mask(path) -> np.ndarray:
@@ -81,8 +91,6 @@ def resize(arr: np.ndarray, w: int, h: int) -> np.ndarray:
     return np.stack([np.asarray(Image.fromarray(np.ascontiguousarray(arr[..., c]), mode).resize((w, h), Image.BILINEAR)) for c in range(arr.shape[2])], -1)
 
 
-# --- colour ---------------------------------------------------------------
-
 def srgb_to_linear(x: np.ndarray) -> np.ndarray:
     return np.where(x <= 0.04045, x / 12.92, ((x + 0.055) / 1.055) ** 2.4)
 
@@ -97,7 +105,6 @@ def luma(img: np.ndarray) -> np.ndarray:
 
 
 def rgb_to_hsv(img: np.ndarray):
-    """Hue in degrees [0, 360), saturation and value in [0, 1]."""
     r, g, b = img[..., 0], img[..., 1], img[..., 2]
     mx, mn = img.max(-1), img.min(-1)
     d = mx - mn
@@ -130,10 +137,7 @@ def smoothstep(e0, e1, x):
     return t * t * (3 - 2 * t)
 
 
-# --- filters --------------------------------------------------------------
-
 def box_blur(a: np.ndarray, r: int) -> np.ndarray:
-    """Mean over a (2r+1)^2 window via cumulative sums; edges use the valid window."""
     if r < 1:
         return a
     if cv2 is not None:
@@ -159,14 +163,13 @@ def gaussian(a: np.ndarray, sigma: float) -> np.ndarray:
         return a
     if cv2 is not None:
         return cv2.GaussianBlur(a, (0, 0), sigma, borderType=cv2.BORDER_REFLECT)
-    r = max(1, int(round(sigma * 0.9)))  # three box passes approximate a gaussian
+    r = max(1, int(round(sigma * 0.9)))
     for _ in range(3):
         a = box_blur(a, r)
     return a
 
 
 def guided_filter(guide: np.ndarray, src: np.ndarray, r: int, eps: float) -> np.ndarray:
-    """Edge-aware smoothing of `src` following edges in `guide` (He et al.)."""
     if cv2 is not None and hasattr(cv2, "ximgproc"):
         g = guide.astype(np.float32)
         return cv2.ximgproc.guidedFilter(g, src.astype(np.float32), r, eps)

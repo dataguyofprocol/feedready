@@ -1,10 +1,3 @@
-"""Mask specs -> float masks.
-
-Coordinates are normalized to the working image, origin top-left. Radii and
-feathers are fractions of the image's SHORT side, so circles stay round.
-See reference/recipe.md for the full spec.
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -17,7 +10,6 @@ COMBINATORS = ("union", "intersect", "subtract")
 
 
 def build(spec: dict | None, scene: Scene) -> np.ndarray | None:
-    """Evaluate a mask spec; None means the whole image."""
     if spec is None or spec.get("type") == "all":
         return None
     m = _base(spec, scene)
@@ -38,7 +30,7 @@ def _base(spec: dict, scene: Scene) -> np.ndarray:
         return out
 
     kind = spec.get("type")
-    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    yy, xx = np.arange(H, dtype=np.float32)[:, None], np.arange(W, dtype=np.float32)[None, :]
 
     if kind == "radial":
         cx, cy = spec["center"]
@@ -133,7 +125,7 @@ def _face(spec: dict, scene: Scene) -> np.ndarray:
         if ipd > 0.25 * bw:
             cx, cy = (lp[0] + rp[0]) / 2, (lp[1] + rp[1]) / 2
             rx, ry = ipd * 1.0, ipd * 0.55
-        else:  # profile / covered face: pupils unreliable, use the upper band of the face box
+        else:
             cx, cy = (x0 + x1) / 2, y0 + (y1 - y0) * 0.3
             rx, ry = bw * 0.6, bh * 0.3
     else:
@@ -144,18 +136,17 @@ def _face(spec: dict, scene: Scene) -> np.ndarray:
 
 
 def _sky_heuristic(img: np.ndarray) -> np.ndarray:
-    """Bright, low-saturation, smooth pixels connected to the top edge (no model)."""
     _, s, v = rgb_to_hsv(img)
     texture = np.abs(luma(img) - gaussian(luma(img), 3))
     cand = (v > 0.55) & (s < 0.35) & (texture < 0.03)
-    connected = np.cumprod(cand, axis=0).astype(np.float32)  # sky until the first non-sky pixel per column
+    connected = np.cumprod(cand, axis=0).astype(np.float32)
     return gaussian(connected, 2)
 
 
 def _modifiers(m: np.ndarray, spec: dict, scene: Scene) -> np.ndarray:
     H, W = m.shape
     S = min(H, W)
-    if g := spec.get("grow"):  # +/- fraction of short side
+    if g := spec.get("grow"):
         r = max(1, int(abs(g) * S))
         if cv2 is not None:
             k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
@@ -177,7 +168,6 @@ def _modifiers(m: np.ndarray, spec: dict, scene: Scene) -> np.ndarray:
 
 
 def _grabcut(m: np.ndarray, img: np.ndarray) -> np.ndarray:
-    """Snap a rough mask to object boundaries with OpenCV GrabCut."""
     if cv2 is None:
         raise MissingCapability("refine: grabcut needs opencv (Mac tier)")
     H, W = m.shape

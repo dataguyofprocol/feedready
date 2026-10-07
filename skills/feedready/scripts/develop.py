@@ -1,9 +1,3 @@
-"""Lightroom-style sliders -> ordered engine ops, plus the numpy implementations.
-
-Both backends share `build_ops` (slider math, LUTs, HSL), so the Core Image
-render and the numpy fallback agree on what each slider means.
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -24,7 +18,6 @@ from imaging import (
     to_u8,
 )
 
-# name: (min, max, meaning) - Lightroom JPEG-mode units
 SLIDERS = {
     "exposure": (-5, 5, "stops"),
     "contrast": (-100, 100, ""),
@@ -48,7 +41,6 @@ CUBE_DIM = 32
 
 
 def validate(adjust: dict) -> list[str]:
-    """Clamp sliders in place; return warnings for unknown or clamped keys."""
     warnings = []
     for k, v in list(adjust.items()):
         if k in SLIDERS:
@@ -65,10 +57,7 @@ def validate(adjust: dict) -> list[str]:
     return warnings
 
 
-# --- tone curve -----------------------------------------------------------
-
 def _monotone_cubic(points, x):
-    """Fritsch-Carlson monotone interpolation through sorted (x, y) points."""
     p = np.array(sorted(points), dtype=np.float64)
     xs, ys = p[:, 0], p[:, 1]
     if len(xs) < 2:
@@ -93,7 +82,6 @@ def _monotone_cubic(points, x):
 
 
 def tone_lut(adjust: dict) -> np.ndarray | None:
-    """Contrast, positive highlights, whites, blacks and point curve as one 1D LUT on sRGB values."""
     c = adjust.get("contrast", 0) / 100
     hi = max(adjust.get("highlights", 0), 0) / 100
     w = adjust.get("whites", 0) / 100
@@ -119,8 +107,6 @@ def tone_lut(adjust: dict) -> np.ndarray | None:
     return np.clip(y, 0, 1).astype(np.float32)
 
 
-# --- colour ---------------------------------------------------------------
-
 def wb_gains(adjust: dict):
     t = adjust.get("temp", 0) / 100
     u = adjust.get("tint", 0) / 100
@@ -132,7 +118,6 @@ def wb_gains(adjust: dict):
 
 
 def _band_weights(h: np.ndarray) -> dict:
-    """Triangular weights between neighbouring band centres; they sum to 1 at every hue."""
     names = list(HSL_BANDS)
     centres = np.array([HSL_BANDS[n] for n in names], dtype=np.float32)
     weights = {}
@@ -164,7 +149,6 @@ def apply_hsl(img: np.ndarray, hsl: dict) -> np.ndarray:
 
 
 def hsl_cube(hsl: dict) -> np.ndarray:
-    """RGBA float32 cube for CIColorCubeWithColorSpace (red varies fastest)."""
     g = np.linspace(0, 1, CUBE_DIM, dtype=np.float32)
     b_, g_, r_ = np.meshgrid(g, g, g, indexing="ij")
     rgb = np.stack([r_, g_, b_], -1).reshape(-1, 1, 3)
@@ -172,10 +156,7 @@ def hsl_cube(hsl: dict) -> np.ndarray:
     return np.concatenate([out, np.ones((out.shape[0], 1), np.float32)], 1).astype(np.float32)
 
 
-# --- ops ------------------------------------------------------------------
-
 def build_ops(adjust: dict, long_edge: int) -> list[dict]:
-    """Ordered engine ops for one step (prepass sliders - PREPASS - are handled separately)."""
     ops = []
     if gains := wb_gains(adjust):
         ops.append({"op": "matrix", "r": gains[0], "g": gains[1], "b": gains[2]})
@@ -185,7 +166,6 @@ def build_ops(adjust: dict, long_edge: int) -> list[dict]:
     if sh or hl < 0:
         ops.append({
             "op": "highlight_shadow",
-            # Core Image's negative shadows are far stronger than its positive ones.
             "shadow": sh / 100 * (0.45 if sh < 0 else 1.0),
             "highlight": 1 + min(hl, 0) / 100,
             "radius": round(max(2.0, long_edge * 0.004), 1),
@@ -209,7 +189,6 @@ def _midtones(img):
 
 
 def np_apply_op(img: np.ndarray, op: dict) -> np.ndarray:
-    """numpy equivalent of one engine op (fallback tier and tests)."""
     kind = op["op"]
     if kind == "matrix":
         lin = srgb_to_linear(img) * np.array([op["r"], op["g"], op["b"]], np.float32)
@@ -242,14 +221,7 @@ def np_apply_op(img: np.ndarray, op: dict) -> np.ndarray:
     raise ValueError(f"unknown op {kind}")
 
 
-# --- prepass (numpy / OpenCV, before the Core Image render) ---------------
-
 def local_contrast(img: np.ndarray, kind: str, amount: float) -> np.ndarray:
-    """Clarity / texture: boost luminance detail above an edge-aware base.
-
-    The guided-filter base follows strong edges, so a dark head against a bright
-    sky gets no halo (a gaussian unsharp mask glows there). amount in [-1, 1].
-    """
     long_edge = max(img.shape[:2])
     radius, eps, gain = (max(8, int(long_edge * 0.02)), 4e-3, 2.2) if kind == "clarity" else (max(2, int(long_edge * 0.003)), 1e-3, 1.6)
     lum = luma(img)
@@ -259,7 +231,6 @@ def local_contrast(img: np.ndarray, kind: str, amount: float) -> np.ndarray:
 
 
 def dehaze(img: np.ndarray, amount: float) -> np.ndarray:
-    """Dark-channel-prior dehaze; amount in [-1, 1], negative adds haze."""
     h, w = img.shape[:2]
     scale = 512 / max(h, w)
     small = resize(img, max(1, int(w * scale)), max(1, int(h * scale))) if scale < 1 else img
@@ -274,14 +245,12 @@ def dehaze(img: np.ndarray, amount: float) -> np.ndarray:
     trans = guided_filter(img, trans, max(4, int(max(h, w) * 0.01)), 1e-3)
     trans = np.clip(trans, 0.2, 1)[..., None]
     clear = np.clip((img - airlight) / trans + airlight, 0, 1)
-    # Haze removal darkens; give back half the lost brightness so it reads as contrast, not exposure.
     before, after = srgb_to_linear(img).mean(), srgb_to_linear(clear).mean()
     clear = linear_to_srgb(srgb_to_linear(clear) * np.sqrt(before / max(after, 1e-6)))
     return img + (clear - img) * amount
 
 
 def heal(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """Fill the masked region from its surroundings: MI-GAN, else OpenCV FSR."""
     hole = 1 - min_filter(1 - (mask > 0.3).astype(np.float32), 2)
     u8 = to_u8(img)
     if migan_available():
@@ -304,8 +273,6 @@ def _migan(u8: np.ndarray, hole: np.ndarray) -> np.ndarray:
     return out[0].transpose(1, 2, 0)
 
 
-# --- crop -----------------------------------------------------------------
-
 PRESETS = {
     "instagram": {"aspect": (4, 5), "size": (1080, 1350)},
     "story": {"aspect": (9, 16), "size": (1080, 1920)},
@@ -322,11 +289,12 @@ def parse_aspect(a):
 
 
 def crop_rect(W: int, H: int, spec: dict | None, preset_aspect) -> tuple[int, int, int, int] | None:
-    """Pixel crop (x, y, w, h). `spec` may give box, or aspect + focus point placement."""
     spec = spec or {}
     if box := spec.get("box"):
-        x0, y0, x1, y1 = box
-        return int(x0 * W), int(y0 * H), int((x1 - x0) * W), int((y1 - y0) * H)
+        x0, y0, x1, y1 = (min(max(float(v), 0.0), 1.0) for v in box)
+        if x1 <= x0 or y1 <= y0:
+            raise ValueError(f"crop box {box} is empty inside the photo; use [x0, y0, x1, y1] with x1 > x0 and y1 > y0")
+        return int(x0 * W), int(y0 * H), max(1, int((x1 - x0) * W)), max(1, int((y1 - y0) * H))
     aspect = parse_aspect(spec.get("aspect")) or preset_aspect
     if not aspect:
         return None

@@ -1,11 +1,3 @@
-"""Measured findings that ground edit suggestions.
-
-Each check reads the Scene and returns findings shaped as
-  {"check", "finding", "evidence", "step" | "crop"}
-where `step` is a ready recipe step (reference/recipe.md). Claude ranks and
-phrases them; the numbers and coordinates come from here, not from eyeballing.
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -50,7 +42,6 @@ def exposure(scene: Scene):
 
 
 def _person(scene: Scene):
-    """Vision person mask, or None when Vision is unavailable or finds nobody."""
     try:
         m = scene.vision_mask("person")
     except MissingCapability:
@@ -100,7 +91,6 @@ def color_cast(scene: Scene):
     r, g, b = srgb_to_linear(img[neutral]).mean(0)
     warm = float(np.log2(r / b))
     green = float(np.log2(g / np.sqrt(r * b)))
-    # Half of the full neutralisation (develop.wb_gains scales), so the mood survives.
     temp = int(round(-50 * warm / 0.70))
     tint = int(round(50 * green / 0.30))
     if abs(temp) < 8 and abs(tint) < 8:
@@ -124,6 +114,7 @@ def haze(scene: Scene):
         raise MissingCapability("needs SegFormer")
     small = resize(scene.img, 512, int(512 * scene.img.shape[0] / scene.img.shape[1]))
     dark = min_filter(small.min(-1), 7)
+    person = [{"type": "person", "grow": 0.01}] if _person(scene) is not None else []
     out = []
     for cls in SCENERY:
         try:
@@ -140,7 +131,7 @@ def haze(scene: Scene):
             "finding": f"the {cls} looks hazy and low-contrast (dark channel {dc:.2f})",
             "evidence": {"dark_channel": round(dc, 3), "share": round(float(m.mean()), 3)},
             "step": {"name": f"{cls}: dehaze + clarity",
-                     "mask": {"op": "subtract", "masks": [{"type": "segment", "class": cls}, {"type": "person", "grow": 0.01},
+                     "mask": {"op": "subtract", "masks": [{"type": "segment", "class": cls}, *person,
                                                          {"type": "segment", "class": "sky"}]},
                      "adjust": {"dehaze": amount, "clarity": 15}},
         })
@@ -167,7 +158,6 @@ def sky(scene: Scene):
 
 
 def distractions(scene: Scene):
-    """Small bright spots on dark surroundings (reflective strips, logos, specks)."""
     if cv2 is None:
         raise MissingCapability("needs OpenCV")
     img = scene.img
@@ -180,7 +170,6 @@ def distractions(scene: Scene):
         x0, y0, x1, y1 = f["box"]
         cand[int(y0 * H):int(y1 * H), int(x0 * W):int(x1 * W)] = False
     if (person := _person(scene)) is not None:
-        # Rim light along the subject's outline belongs to the subject, not a distraction.
         person = (person > 0.5).astype(np.uint8)
         band = max(3, int(0.015 * S))
         outline = cv2.dilate(person, np.ones((band, band), np.uint8)) - cv2.erode(person, np.ones((band, band), np.uint8))
@@ -197,7 +186,6 @@ def distractions(scene: Scene):
         ys, xs = slice(max(0, y - pad), y + h + pad), slice(max(0, x - pad), x + w + pad)
         blob = (labels[ys, xs] == i).astype(np.uint8)
         around = (cv2.dilate(blob, kernel) > 0) & (blob == 0)
-        # A stray spot sits alone on a dark area; pieces of a bright pattern (a printed fleece) have bright neighbours.
         if (lum[ys, xs][around] > 0.35).mean() > 0.04:
             continue
         contrast = float((lum - surround)[labels == i].mean())
@@ -217,7 +205,6 @@ def distractions(scene: Scene):
 
 
 def crop(scene: Scene):
-    """Headroom and a destination crop anchored on the face or subject top."""
     H, W = scene.img.shape[:2]
     box = None
     anchor = None

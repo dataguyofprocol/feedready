@@ -1,12 +1,3 @@
-"""Self-test: every slider moves the image the right way, on both renderers.
-
-  ~/.cache/feedready/venv/bin/python tests/selftest.py
-
-Builds a synthetic test card (gradient, colour patches, texture), applies each
-slider globally, and checks the expected direction on the Core Image renderer
-(when the engine is built) and the numpy fallback.
-"""
-
 from __future__ import annotations
 
 import json
@@ -17,14 +8,14 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "feedready" / "scripts"))
+
+import develop
+import masks
+from detect import Scene, edgetam_available, engine_available, migan_available
+from imaging import gaussian, load_rgb, luma, rgb_to_hsv, save_png16, srgb_to_linear
+
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "skills" / "feedready" / "scripts"))
-
-import develop  # noqa: E402
-import masks  # noqa: E402
-from detect import Scene, edgetam_available, engine_available, migan_available  # noqa: E402
-from imaging import gaussian, load_rgb, luma, rgb_to_hsv, save_png16, srgb_to_linear  # noqa: E402
-
 FAILS = []
 
 
@@ -103,7 +94,7 @@ def main():
         if renderer == "numpy":
             import detect
 
-            detect.ENGINE = Path("/nonexistent")  # force fallback in-process
+            detect.ENGINE = Path("/nonexistent")
         identity = _apply(renderer, {"steps": []}, src, tmp / f"id_{renderer}.png")
         err = float(np.abs(identity - base).max())
         check("identity", err <= 1.5 / 255, f"max err {err * 255:.2f}/255")
@@ -239,14 +230,14 @@ def _heal():
         outside = float(np.abs(healed[:150] - spotted[:150]).max())
         check(f"heal ({name}) fills the blob from its surroundings", inside < 0.05, f"mean abs diff {inside:.3f}")
         check(f"heal ({name}) leaves the rest untouched", outside <= 1.5 / 255, f"max err {outside * 255:.2f}/255")
-        detect.MIGAN = Path("/nonexistent")  # next backend down the chain
+        detect.MIGAN = Path("/nonexistent")
     detect.MIGAN = saved
 
 
 def _apply(renderer, recipe, src, out):
     if renderer == "core-image":
         return run("apply", recipe, src, out)
-    import feedready  # in-process so the forced fallback applies
+    import feedready
 
     class Args:
         pass

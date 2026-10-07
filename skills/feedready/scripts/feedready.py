@@ -1,20 +1,8 @@
-#!/usr/bin/env python3
-"""feedready: apply Claude's photo-edit recipe and export a post-ready image.
-
-  feedready.py doctor
-  feedready.py inspect IMG                 grid overlay + stats + detections (JSON)
-  feedready.py masks RECIPE IMG            contact sheet of every step's mask
-  feedready.py apply RECIPE IMG [-o OUT]   render final JPEG + before/after compare
-
-RECIPE is a path to a JSON file or an inline JSON string (reference/recipe.md).
-Mac tier renders with Core Image + Vision (feedready-engine); elsewhere a numpy
-fallback renders the subset that needs no models.
-"""
-
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -24,10 +12,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import develop  # noqa: E402
-import diagnose  # noqa: E402
-import masks as maskmod  # noqa: E402
-from detect import (  # noqa: E402
+import develop
+import diagnose
+import masks as maskmod
+from detect import (
     CACHE,
     MissingCapability,
     Scene,
@@ -38,7 +26,19 @@ from detect import (  # noqa: E402
     run_engine,
     segformer_available,
 )
-from imaging import cv2, load_rgb, luma, save_jpeg, save_mask, save_png16, to_u8  # noqa: E402
+from imaging import cv2, load_rgb, luma, save_jpeg, save_mask, save_png16, to_u8
+
+USAGE = """feedready: apply Claude's photo-edit recipe and export a post-ready image.
+
+  feedready.py doctor
+  feedready.py inspect IMG                 grid overlay + stats + detections (JSON)
+  feedready.py masks RECIPE IMG            contact sheet of every step's mask
+  feedready.py apply RECIPE IMG [-o OUT]   render final JPEG + before/after compare
+
+RECIPE is a path to a JSON file or an inline JSON string (reference/recipe.md).
+Mac tier renders with Core Image + Vision (feedready-engine); elsewhere a numpy
+fallback renders the subset that needs no models.
+"""
 
 CLAUDE_OUTPUTS = Path("/mnt/user-data/outputs")
 
@@ -53,10 +53,7 @@ def output_dir() -> Path:
     return Path.home() / "Pictures" / "feedready"
 
 
-# --- working image --------------------------------------------------------
-
 def prepare(src: Path) -> tuple[Path, Path, np.ndarray]:
-    """Per-image work dir with an oriented 16-bit sRGB working copy."""
     h = hashlib.sha1()
     with open(src, "rb") as f:
         h.update(f.read(1 << 20))
@@ -73,14 +70,11 @@ def prepare(src: Path) -> tuple[Path, Path, np.ndarray]:
 
 
 def load_recipe(arg: str) -> dict:
-    p = Path(arg).expanduser()
-    text = p.read_text() if p.exists() else arg
+    text = arg if arg.lstrip().startswith("{") else Path(arg).expanduser().read_text()
     recipe = json.loads(text)
     recipe.setdefault("steps", [])
     return recipe
 
-
-# --- drawing helpers ------------------------------------------------------
 
 def _font(size: int):
     for name in ("/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc", "DejaVuSans.ttf"):
@@ -126,8 +120,6 @@ def stats(img: np.ndarray) -> dict:
     }
 
 
-# --- commands -------------------------------------------------------------
-
 def cmd_doctor(_args) -> dict:
     report = {
         "tier": tier(),
@@ -139,12 +131,7 @@ def cmd_doctor(_args) -> dict:
         "heal model (MI-GAN)": migan_available(),
         "output_dir": str(output_dir()),
     }
-    try:
-        import pillow_heif  # noqa: F401
-
-        report["heic"] = True
-    except ImportError:
-        report["heic"] = tier() == "mac"
+    report["heic"] = importlib.util.find_spec("pillow_heif") is not None or tier() == "mac"
     missing = []
     if sys.platform == "darwin" and not engine_available():
         missing.append("engine: run setup.sh (compiles Swift, no download)")
@@ -190,7 +177,7 @@ def _step_masks(recipe: dict, scene: Scene) -> list[np.ndarray | None]:
     for i, step in enumerate(recipe["steps"]):
         try:
             result.append(maskmod.build(step.get("mask"), scene))
-        except MissingCapability as e:
+        except (MissingCapability, ValueError) as e:
             raise SystemExit(json.dumps({"error": f"step {i + 1} ({step.get('name', '')}): {e}", "tier": tier()}))
     return result
 
@@ -248,10 +235,13 @@ def _output_geometry(recipe, W, H):
     preset = develop.PRESETS.get(recipe.get("preset", "original"))
     if preset is None:
         raise SystemExit(json.dumps({"error": f"unknown preset; use one of {list(develop.PRESETS)}"}))
-    crop = develop.crop_rect(W, H, recipe.get("crop"), preset["aspect"])
+    try:
+        crop = develop.crop_rect(W, H, recipe.get("crop"), preset["aspect"])
+    except (ValueError, TypeError) as e:
+        raise SystemExit(json.dumps({"error": f"crop: {e}"}))
     cw, ch = (crop[2], crop[3]) if crop else (W, H)
     resize = None
-    if preset["size"] and cw > preset["size"][0]:  # downscale only
+    if preset["size"] and cw > preset["size"][0]:
         tw = preset["size"][0]
         resize = [tw, int(round(tw * ch / cw))]
     return crop, resize
@@ -385,7 +375,7 @@ def _compare(before, after, path, height=900):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(description=USAGE, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("doctor")
     p = sub.add_parser("inspect")

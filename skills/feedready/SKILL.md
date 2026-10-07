@@ -16,7 +16,7 @@ Run `run.sh doctor`.
 - `tier: basic` (claude.ai/phone): global sliders, crop/presets, and radial/linear/brush/polygon/luminance/color masks work. Masks of type person/subject/background/face/segment/object and the `heal` adjustment don't. For those, tell the user: "this one's best done on the Mac". Don't fake it with a poor approximation.
 
 ## 1. Inspect
-`run.sh inspect PHOTO`, then **look at** the `original` and `grid` images it returns. The grid has yellow lines every 10% labelled .1–.9, with any detected face boxed in cyan. Read every coordinate you use from this grid. Don't estimate pixel positions by eye.
+`run.sh inspect PHOTO`, then look at the `original` and `grid` images it returns. The grid has yellow lines every 10% labelled .1–.9, with any detected face boxed in cyan. Read every coordinate you use from this grid. Don't estimate pixel positions by eye.
 
 The JSON also gives brightness stats, faces, subject boxes, `scene_classes`, and `diagnostics.findings`. Each finding is a measured problem with its `evidence` and a ready recipe `step` (or a `crop` per destination). `diagnostics.skipped` lists the checks this tier couldn't run.
 
@@ -33,7 +33,7 @@ Otherwise, suggest. Start from the findings, then add what measurements can't ju
 Then stop. The picked items become the recipe. A finding's `step` drops in as written; tweak values if the user asked.
 
 ## 3. Write the recipe and check the masks
-Write the recipe JSON to a file (schema and examples: `reference/recipe.md`). Run `run.sh masks RECIPE PHOTO` and **look at** the contact sheet, where each step's mask shows as red.
+Write the recipe JSON to a file (schema and examples: `reference/recipe.md`). Run `run.sh masks RECIPE PHOTO` and look at the contact sheet, where each step's mask shows as red.
 
 People, faces, sky and broad scenery have their own types (`person`, `face`, `sky`, `segment`). For anything else the user names ("the snowy peaks", "the glove logo", "that car"), use `object` with a box read from the grid.
 - A tight box is the most reliable prompt.
@@ -50,7 +50,7 @@ Fix any mask that spills or misses, at most 2 rounds. Common fixes:
 - Use an explicit `radial` from the grid when Vision's face points miss. Covered or profile faces often fool it.
 
 ## 4. Apply and check
-Run `run.sh apply RECIPE PHOTO`. **Look at** the returned `compare` image (before | after). Also check `after` stats: `clipped_highlights_pct` should stay under ~0.5%, and the sky must not go pure white.
+Run `run.sh apply RECIPE PHOTO`. Look at the returned `compare` image (before | after). Also check `after` stats: `clipped_highlights_pct` should stay under ~0.5%, and the sky must not go pure white.
 
 Re-tune and re-apply at most 2 times. Prefer subtle: these are Lightroom-scale sliders, and ±20–40 is usually plenty. Dehaze and clarity on a smooth sky bring out streaks, so mask them to the scenery.
 

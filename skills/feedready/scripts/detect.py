@@ -1,13 +1,7 @@
-"""Scene understanding: Apple Vision (via feedready-engine), SegFormer ADE20K and
-EdgeTAM promptable object masks.
-
-Results are cached in the per-image work directory, so `inspect`, `masks` and
-`apply` pay for detection once.
-"""
-
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import subprocess
 from pathlib import Path
@@ -27,7 +21,6 @@ EDGETAM_DECODER = CACHE / "models" / "edgetam" / "prompt_encoder_mask_decoder.on
 MIGAN = CACHE / "models" / "migan_pipeline_v2.onnx"
 LOW_IOU = 0.7
 
-# Friendly names Claude may use -> ADE20K labels (summed).
 SEG_ALIASES = {
     "sky": ["sky"],
     "mountain": ["mountain", "hill"],
@@ -39,12 +32,11 @@ SEG_ALIASES = {
     "ground": ["earth", "ground", "field", "sand", "road", "path", "dirt track", "floor", "grass"],
     "building": ["building", "house", "skyscraper", "tower"],
     "rock": ["rock"],
-    "snow": ["snow"],
 }
 
 
 class MissingCapability(RuntimeError):
-    """A mask needs a component this machine/tier lacks (model, engine, OpenCV)."""
+    pass
 
 
 def engine_available() -> bool:
@@ -52,7 +44,6 @@ def engine_available() -> bool:
 
 
 def engine_stale() -> bool:
-    """True when the compiled engine came from different Swift source than this copy of the skill."""
     stamp = ENGINE.with_name(ENGINE.name + ".sha256")
     if not engine_available() or not ENGINE_SOURCE.exists():
         return False
@@ -70,8 +61,6 @@ def run_engine(*args: str) -> str:
 
 
 class Scene:
-    """Lazy, cached detections for one working image."""
-
     def __init__(self, work: Path, working_png: Path, img: np.ndarray):
         self.work = work
         self.working_png = working_png
@@ -81,7 +70,6 @@ class Scene:
         self._edgetam = None
         self.notes: list[str] = []
 
-    # --- Vision ---
     def vision(self) -> dict:
         if self._vision is None:
             out = self.work / "vision"
@@ -103,9 +91,7 @@ class Scene:
     def faces(self) -> list[dict]:
         return self.vision().get("faces", [])
 
-    # --- SegFormer ---
     def segmentation(self):
-        """(probabilities CxHxW at <=1024px, labels list)."""
         if self._seg is None:
             cache = self.work / "segformer.npz"
             if cache.exists():
@@ -126,7 +112,6 @@ class Scene:
         h, w = self.img.shape[:2]
         m = resize(m, w, h)
         if refine:
-            # Snap the coarse 128px logits to real edges in the photo.
             m = guided_filter(self.img, m, max(4, int(max(h, w) * 0.008)), 1e-4).clip(0, 1)
         return m
 
@@ -148,9 +133,7 @@ class Scene:
             })
         return sorted(out, key=lambda d: -d["share"])
 
-    # --- EdgeTAM ---
     def object_mask(self, box=None, points=(), exclude=()) -> tuple[np.ndarray, float]:
-        """Mask of the object a box and/or clicks point at (normalized coords); also its iou score."""
         if box is None and not points:
             raise ValueError("object mask needs a box or at least one point")
         decoder, embeddings = self._edgetam_embeddings()
@@ -167,7 +150,6 @@ class Scene:
         h, w = self.img.shape[:2]
         logit = resize(np.ascontiguousarray(logits[0, 0, best]), w, h)
         m = 1 / (1 + np.exp(-np.clip(logit, -30, 30)))
-        # A radius wider than the object erases it (a strap, a reflective strip), so cap it by its width.
         r = max(1, min(max(3, int(max(h, w) * 0.006)), int(_width(m > 0.5) / 3)))
         m = guided_filter(self.img, m.astype(np.float32), r, 1e-4).clip(0, 1)
         if score < LOW_IOU:
@@ -183,10 +165,9 @@ class Scene:
                 raise MissingCapability("object masks need onnxruntime + EdgeTAM (41 MB): run `setup.sh --models`")
             import onnxruntime as ort
 
-            providers = ["CPUExecutionProvider"]  # CoreML splits the decoder and crashes on empty point tensors
+            providers = ["CPUExecutionProvider"]
             encoder = ort.InferenceSession(str(EDGETAM_ENCODER), providers=providers)
             decoder = ort.InferenceSession(str(EDGETAM_DECODER), providers=providers)
-            # Stretched to 1024x1024, not padded, so the 256px mask maps straight back onto the frame.
             x = resize(self.img, 1024, 1024)
             x = (x - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)
             outs = encoder.run(None, {"pixel_values": x.transpose(2, 0, 1)[None].astype(np.float32)})
@@ -196,17 +177,12 @@ class Scene:
 
 
 def _width(shape: np.ndarray) -> float:
-    """Mean width in pixels of a binary shape: 2 * area / boundary length."""
     boundary = shape & (min_filter(shape.astype(np.float32), 1) < 0.5)
     return 2 * float(shape.sum()) / max(1, int(boundary.sum()))
 
 
 def _onnxruntime() -> bool:
-    try:
-        import onnxruntime  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    return importlib.util.find_spec("onnxruntime") is not None
 
 
 def segformer_available() -> bool:
@@ -236,9 +212,5 @@ def _run_segformer(img: np.ndarray):
     x = x.transpose(2, 0, 1)[None].astype(np.float32)
     session = ort.InferenceSession(str(SEGFORMER), providers=["CPUExecutionProvider"])
     logits = session.run(None, {"pixel_values": x})[0][0]
-    h, w = img.shape[:2]
-    scale = min(1.0, 1024 / max(h, w))
-    tw, th = max(1, int(w * scale)), max(1, int(h * scale))
-    logits = np.stack([resize(np.ascontiguousarray(c), tw, th) for c in logits])
     e = np.exp(logits - logits.max(0))
     return (e / e.sum(0)).astype(np.float32), labels

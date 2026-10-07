@@ -59,7 +59,7 @@ Claude replies with a numbered list of suggestions. Reply `go` to apply all of t
 
 If you already have a list of edits, for example from an earlier chat, paste it and say `apply`. Claude skips the suggestion step and maps each item onto an edit.
 
-Final images go to `~/Pictures/feedready/`. Each one is an sRGB JPEG at quality 95 with no metadata, so no GPS location, next to a `-compare.jpg` before/after.
+Final images go to `~/Pictures/feedready/`. Each one is an sRGB JPEG at quality 95 with no metadata (so no GPS location), saved next to a `-compare.jpg` before/after.
 
 ## Use it from the phone
 

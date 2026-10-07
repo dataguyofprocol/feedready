@@ -1,11 +1,3 @@
-// feedready-engine: Core Image + Vision executor driven by feedready.py.
-//
-//   feedready-engine decode IN OUT.png        orient + convert to 16-bit sRGB PNG
-//   feedready-engine vision IN OUTDIR         person/subject masks + faces/saliency JSON
-//   feedready-engine render PLAN.json         apply a resolved plan, write JPEG
-//
-// All coordinates written or read here are top-left origin, matching numpy.
-
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import Foundation
@@ -23,10 +15,9 @@ func load(_ path: String) -> CIImage {
     guard let img = CIImage(contentsOf: URL(fileURLWithPath: path), options: [.applyOrientationProperty: true]) else {
         fail("cannot read image: \(path)")
     }
-    return img.transformed(by: CGAffineTransform(translationX: -img.extent.minX, y: -img.extent.minY))
+    return img.transformed(by: CGAffineTransform(translationX: -img.extent.minX, y: -img.extent.minY)).settingProperties([:])
 }
 
-/// Masks are raw coverage values: load without colour management so 0.5 stays 0.5.
 func loadMask(_ path: String) -> CIImage {
     guard let img = CIImage(contentsOf: URL(fileURLWithPath: path), options: [.colorSpace: NSNull()]) else {
         fail("cannot read mask: \(path)")
@@ -51,20 +42,15 @@ func writeJSON(_ obj: Any, _ path: String) {
     try! data.write(to: URL(fileURLWithPath: path))
 }
 
-// MARK: decode
-
 func decode(_ input: String, _ output: String) {
     writePNG16(load(input), output)
 }
-
-// MARK: vision
 
 func scaled(_ mask: CIImage, to extent: CGRect) -> CIImage {
     let sx = extent.width / mask.extent.width, sy = extent.height / mask.extent.height
     return mask.transformed(by: CGAffineTransform(scaleX: sx, y: sy)).cropped(to: extent)
 }
 
-/// Vision normalized point (bottom-left origin) -> top-left normalized [x, y].
 func topLeft(_ p: CGPoint) -> [Double] { [Double(p.x), Double(1 - p.y)] }
 
 func topLeftBox(_ r: CGRect) -> [Double] {
@@ -81,8 +67,6 @@ func vision(_ input: String, _ outDir: String) {
     let saliency = VNGenerateAttentionBasedSaliencyImageRequest()
     let horizon = VNDetectHorizonRequest()
     do { try handler.perform([person, foreground, rects, saliency, horizon]) } catch { fail("vision failed: \(error)") }
-    // Landmarks seeded from the rectangle detector: on its own the landmarks request
-    // misses partly covered faces (e.g. a balaclava) that the rectangle detector finds.
     let faces = VNDetectFaceLandmarksRequest()
     faces.inputFaceObservations = rects.results ?? []
     if !(rects.results ?? []).isEmpty {
@@ -101,7 +85,6 @@ func vision(_ input: String, _ outDir: String) {
     }
     info["faces"] = (faces.results ?? []).map { f -> [String: Any] in
         var face: [String: Any] = ["box": topLeftBox(f.boundingBox), "confidence": f.confidence]
-        // Landmark points are normalized to the face box; convert to image space.
         func pts(_ region: VNFaceLandmarkRegion2D?) -> [[Double]]? {
             guard let region else { return nil }
             return region.normalizedPoints.map { p in
@@ -122,8 +105,6 @@ func vision(_ input: String, _ outDir: String) {
     if let h = horizon.results?.first { info["horizon_degrees"] = Double(h.angle) * 180 / .pi }
     writeJSON(info, outDir + "/vision.json")
 }
-
-// MARK: render
 
 func num(_ d: [String: Any], _ k: String, _ def: Double = 0) -> Double { (d[k] as? NSNumber)?.doubleValue ?? def }
 
@@ -237,6 +218,7 @@ func render(_ planPath: String) {
         img = f.outputImage!.cropped(to: e)
     }
 
+    img = img.settingProperties([:])
     let out = URL(fileURLWithPath: plan["output"] as! String)
     let quality = num(plan, "quality", 0.95)
     do {

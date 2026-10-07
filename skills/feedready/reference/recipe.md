@@ -18,7 +18,7 @@ A recipe is JSON: a file path or an inline string passed to `masks` / `apply`.
 
 - `steps` run in order. Each step is applied through its mask, or to the whole image if there is no mask.
 - Coordinates are normalized to the **original** photo: `[x, y]` with the origin top-left, read from the `inspect` grid.
-- Sizes (`radius`, `size`, `soft`, `feather`, `grow`) are fractions of the photo's **short side**.
+- Sizes (`radius`, `size`, `soft`, `feather`, `grow`) are fractions of the photo's short side.
 
 ## Output
 
@@ -52,17 +52,22 @@ Typical amounts for a post: ±0.3–0.7 exposure on a region, ±20–40 on most 
 
 ## Masks
 
-**Shapes**
+### Shapes
+
 - `{"type": "radial", "center": [x, y], "radius": r or [rx, ry], "angle": deg, "falloff": 0.5}`: an ellipse, where `falloff` is the soft fraction of the radius.
 - `{"type": "linear", "start": [x, y], "end": [x, y]}`: full strength at `start`, fading to 0 at `end`.
 - `{"type": "polygon", "points": [[x, y], …], "soft": 0.004}`
 - `{"type": "brush", "dots": [[x, y, r], …], "soft": 0.006}`: a dab per dot, for spots and small objects.
 
-**Ranges** (computed on the original photo)
+### Ranges
+
+Computed on the original photo.
+
 - `{"type": "luminance", "min": 0.6, "max": 1, "soft": 0.08}`
 - `{"type": "color", "hue": 210, "range": 25, "soft": 15, "min_sat": 0.08}`: hue in degrees (red 0, orange 30, yellow 60, green 120, aqua 180, blue 240, magenta 300).
 
-**Detected** (Mac)
+### Detected (Mac only)
+
 - `{"type": "person"}`: everyone in the photo (Vision person segmentation).
 - `{"type": "subject"}`: the main subject(s), which can be any object (Vision subject lift). `{"type": "background"}` is the inverse.
 - `{"type": "face", "part": "face" | "eyes", "index": 0, "scale": 1.0}`: built from Vision face points. Check it on the contact sheet, because covered or profile faces mislead it.
@@ -70,10 +75,14 @@ Typical amounts for a post: ±0.3–0.7 exposure on a region, ±20–40 on most 
 - `{"type": "sky"}`: SegFormer sky when the model is available, otherwise a heuristic.
 - `{"type": "object", "box": [x0, y0, x1, y1], "points": [[x, y], …], "exclude": [[x, y], …]}`: the object the prompt points at (EdgeTAM), for anything without a dedicated type. Give a `box`, at least one `points` click, or both. `exclude` clicks push look-alike neighbours out. A tight box from the grid works best. `notes` in the `masks` and `apply` output flags a low-confidence result.
 
-**Combine**
+### Combine
+
 - `{"op": "union" | "intersect" | "subtract", "masks": [A, B, …]}`. For `subtract`, the first mask has all the others removed from it.
 
-**Modifiers** (on any mask)
+### Modifiers
+
+These work on any mask.
+
 - `"invert": true`
 - `"grow": ±0.01`: dilate or erode by that fraction of the short side.
 - `"refine": "edges"` (guided snap to edges) or `"grabcut"` (turns a rough polygon or brush into a clean object outline; Mac only).

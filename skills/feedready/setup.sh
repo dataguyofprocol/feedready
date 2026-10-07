@@ -1,8 +1,4 @@
 #!/bin/sh
-# One-time Mac setup; rerun after updating the plugin. Everything lands in
-# ~/.cache/feedready, so the installed skill folder stays code-only. Downloads: Python packages (~90 MB from PyPI);
-# with --segformer also the 4.4 MB SegFormer-B0 scene model from HuggingFace;
-# with --models also EdgeTAM object masks (41 MB) and the MI-GAN heal model (28 MB).
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 CACHE="$HOME/.cache/feedready"
@@ -17,7 +13,6 @@ for arg in "$@"; do
 done
 mkdir -p "$CACHE/bin" "$CACHE/models"
 
-# Download to a temp name so an interrupted fetch never looks like an installed model.
 fetch() {
   curl -sSfL -o "$1.part" "$2"
   mv "$1.part" "$1"
