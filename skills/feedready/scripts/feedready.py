@@ -41,6 +41,7 @@ fallback renders the subset that needs no models.
 """
 
 CLAUDE_OUTPUTS = Path("/mnt/user-data/outputs")
+LARGE_MEGAPIXELS = 30
 
 
 def tier() -> str:
@@ -154,6 +155,7 @@ def cmd_inspect(args) -> dict:
     work, working, img = prepare(src)
     scene = Scene(work, working, img)
     out = {"work_dir": str(work), "size": [img.shape[1], img.shape[0]], "tier": tier(), "stats": stats(img)}
+    out.update(_resolution(img, src))
     if tier() == "mac":
         v = scene.vision()
         out["faces"] = [{k: f.get(k) for k in ("box", "left_pupil", "right_pupil", "confidence")} for f in v.get("faces", [])]
@@ -170,6 +172,15 @@ def cmd_inspect(args) -> dict:
     out["grid"] = str(grid)
     out["original"] = str(working)
     return out
+
+
+def _resolution(img: np.ndarray, src: Path) -> dict:
+    mp = img.shape[0] * img.shape[1] / 1e6
+    return {
+        "megapixels": round(mp, 1),
+        "file_mb": round(src.stat().st_size / 1e6, 1),
+        "large": mp > LARGE_MEGAPIXELS,
+    }
 
 
 def _step_masks(recipe: dict, scene: Scene) -> list[np.ndarray | None]:
@@ -241,9 +252,12 @@ def _output_geometry(recipe, W, H):
         raise SystemExit(json.dumps({"error": f"crop: {e}"}))
     cw, ch = (crop[2], crop[3]) if crop else (W, H)
     resize = None
-    if preset["size"] and cw > preset["size"][0]:
-        tw = preset["size"][0]
-        resize = [tw, int(round(tw * ch / cw))]
+    if (max_edge := recipe.get("max_edge")) is not None:
+        if not isinstance(max_edge, (int, float)) or max_edge < 64:
+            raise SystemExit(json.dumps({"error": "max_edge: give the long edge in pixels, at least 64"}))
+        scale = max_edge / max(cw, ch)
+        if scale < 1:
+            resize = [max(1, round(cw * scale)), max(1, round(ch * scale))]
     return crop, resize
 
 
@@ -277,7 +291,7 @@ def cmd_apply(args) -> dict:
     if tier() == "mac":
         _render_ci(work, input_png, recipe, built, steps_ops, crop, resize, vignette, out)
     else:
-        _render_np(pre, built, steps_ops, crop, resize, vignette, out, recipe.get("quality", 95))
+        _render_np(pre, built, steps_ops, crop, resize, vignette, out, recipe.get("quality", 100))
 
     result = load_rgb(out)
     before = img if crop is None else img[crop[1]:crop[1] + crop[3], crop[0]:crop[0] + crop[2]]
@@ -288,6 +302,7 @@ def cmd_apply(args) -> dict:
         "output": str(out),
         "compare": str(compare),
         "size": [result.shape[1], result.shape[0]],
+        "file_mb": round(out.stat().st_size / 1e6, 1),
         "renderer": "core-image" if tier() == "mac" else "numpy",
         "before": stats(before),
         "after": stats(result),
@@ -324,7 +339,7 @@ def _render_ci(work, input_png, recipe, built, steps_ops, crop, resize, vignette
     plan = {
         "input": str(Path(input_png).relative_to(work)),
         "output": str(out),
-        "quality": recipe.get("quality", 95) / 100,
+        "quality": recipe.get("quality", 100) / 100,
         "steps": plan_steps,
         "crop": list(crop) if crop else None,
         "resize": resize,

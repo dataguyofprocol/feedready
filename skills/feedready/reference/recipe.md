@@ -11,8 +11,7 @@ A recipe is JSON: a file path or an inline string passed to `masks` / `apply`.
     {"name": "lift eyes", "mask": {"type": "radial", "center": [0.555, 0.352], "radius": [0.07, 0.03]},
      "adjust": {"exposure": 0.4}}
   ],
-  "vignette": -10,
-  "quality": 95
+  "vignette": -10
 }
 ```
 
@@ -24,10 +23,11 @@ A recipe is JSON: a file path or an inline string passed to `masks` / `apply`.
 
 | key | values |
 |---|---|
-| `preset` | `instagram` (4:5, 1080×1350), `story` (9:16, 1080×1920), `linkedin` (1:1, 1080×1080; the profile picture is shown as a circle, so keep the face centered and the corners unimportant), `original` (no crop, full size) |
+| `preset` | Sets the crop aspect only; the output keeps the crop's full resolution. `instagram` (4:5), `story` (9:16), `linkedin` (1:1; the profile picture is shown as a circle, so keep the face centered and the corners unimportant), `original` (no crop) |
 | `crop` | `{"aspect": "4:5", "focus": [x, y], "focus_at": [ax, ay], "scale": 1.0}`: the largest crop of that aspect that places `focus` at position `focus_at` inside the frame. `scale` < 1 zooms in. Or use `{"box": [x0, y0, x1, y1]}`. If omitted, the preset's aspect is used, centered. |
 | `vignette` | -100…100. Negative darkens the edges. Applied after the crop. |
-| `quality` | JPEG quality, default 95 |
+| `max_edge` | Long edge in pixels, applied after the crop; shrinks only, never enlarges. Omit it to keep full resolution. Set it only after the user agreed to shrink a `large` photo. |
+| `quality` | JPEG quality, default 100 (4:4:4 chroma). Leave it unless the user asks for a smaller file. |
 
 ## Adjustments (Lightroom JPEG-mode units)
 

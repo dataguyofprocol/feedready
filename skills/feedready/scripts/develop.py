@@ -274,10 +274,10 @@ def _migan(u8: np.ndarray, hole: np.ndarray) -> np.ndarray:
 
 
 PRESETS = {
-    "instagram": {"aspect": (4, 5), "size": (1080, 1350)},
-    "story": {"aspect": (9, 16), "size": (1080, 1920)},
-    "linkedin": {"aspect": (1, 1), "size": (1080, 1080)},
-    "original": {"aspect": None, "size": None},
+    "instagram": {"aspect": (4, 5)},
+    "story": {"aspect": (9, 16)},
+    "linkedin": {"aspect": (1, 1)},
+    "original": {"aspect": None},
 }
 
 

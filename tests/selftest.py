@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from PIL import Image, JpegImagePlugin
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "feedready" / "scripts"))
 
@@ -98,6 +99,16 @@ def main():
         identity = _apply(renderer, {"steps": []}, src, tmp / f"id_{renderer}.png")
         err = float(np.abs(identity - base).max())
         check("identity", err <= 1.5 / 255, f"max err {err * 255:.2f}/255")
+
+        jpg = tmp / f"insta_{renderer}.jpg"
+        full = _apply(renderer, {"preset": "instagram", "steps": []}, src, jpg)
+        check("preset crops at full resolution", full.shape[:2] == (400, 320), str(full.shape[:2]))
+        sampling = JpegImagePlugin.get_sampling(Image.open(jpg))
+        check("jpeg keeps full colour resolution (4:4:4)", sampling == 0, f"sampling {sampling}")
+        small = _apply(renderer, {"preset": "instagram", "max_edge": 200, "steps": []}, src, tmp / f"small_{renderer}.png")
+        check("max_edge shrinks the long edge", small.shape[:2] == (200, 160), str(small.shape[:2]))
+        big = _apply(renderer, {"max_edge": 5000, "steps": []}, src, tmp / f"big_{renderer}.png")
+        check("max_edge never enlarges", big.shape[:2] == (400, 600), str(big.shape[:2]))
 
         before = metrics(base)
         for slider, (value, ok) in EXPECT.items():

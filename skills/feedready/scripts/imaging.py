@@ -73,7 +73,7 @@ def save_mask(mask: np.ndarray, path) -> None:
     Image.fromarray((mask.clip(0, 1) * 255 + 0.5).astype(np.uint8), "L").save(path)
 
 
-def save_jpeg(img: np.ndarray, path, quality: int = 95) -> None:
+def save_jpeg(img: np.ndarray, path, quality: int = 100) -> None:
     Image.fromarray((img.clip(0, 1) * 255 + 0.5).astype(np.uint8)).save(path, quality=quality, subsampling=0)
 
 

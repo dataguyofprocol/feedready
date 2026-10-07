@@ -18,7 +18,7 @@ Run `run.sh doctor`.
 ## 1. Inspect
 `run.sh inspect PHOTO`, then look at the `original` and `grid` images it returns. The grid has yellow lines every 10% labelled .1–.9, with any detected face boxed in cyan. Read every coordinate you use from this grid. Don't estimate pixel positions by eye.
 
-The JSON also gives brightness stats, faces, subject boxes, `scene_classes`, and `diagnostics.findings`. Each finding is a measured problem with its `evidence` and a ready recipe `step` (or a `crop` per destination). `diagnostics.skipped` lists the checks this tier couldn't run.
+The JSON also gives `size`, `megapixels`, `file_mb`, `large`, brightness stats, faces, subject boxes, `scene_classes`, and `diagnostics.findings`. Each finding is a measured problem with its `evidence` and a ready recipe `step` (or a `crop` per destination). `diagnostics.skipped` lists the checks this tier couldn't run.
 
 ## 2. Suggest, then wait for the pick
 Never render before the user has chosen. The one exception: the user already gave the exact edits and said to apply them, e.g. a pasted list plus "apply". In that case, map each item to a step in one line ("eyes +0.4 EV → radial on the eyes, exposure 0.4"), flag anything you can't do, and continue.
@@ -28,6 +28,7 @@ Otherwise, suggest. Start from the findings, then add what measurements can't ju
 - Each item says what to change, where, how much, and why it helps the post. Quote the evidence, e.g. "you're 2.9 stops darker than the sky".
 - Mark taste calls as optional: a cast that may be the grade, a silhouette that may be the look.
 - Keep the photo's mood unless the user asks for a new look.
+- Output stays at full resolution, cropped only. If `inspect` says `large: true` (over 30 MP), ask in the same message whether to keep full size or shrink it, and say what each costs: full size keeps every pixel but the file can run to tens of MB; a 4096 px long edge is still sharp on any screen at a fraction of the size. Only add `max_edge` to the recipe after the user says yes. Never shrink a photo that isn't `large` unless the user asks.
 - End with: "Reply 'go' for all, pick numbers (e.g. 1, 3, 4), or tweak any."
 
 Then stop. The picked items become the recipe. A finding's `step` drops in as written; tweak values if the user asked.
@@ -55,12 +56,12 @@ Run `run.sh apply RECIPE PHOTO`. Look at the returned `compare` image (before | 
 Re-tune and re-apply at most 2 times. Prefer subtle: these are Lightroom-scale sliders, and ±20–40 is usually plenty. Dehaze and clarity on a smooth sky bring out streaks, so mask them to the scenery.
 
 ## 5. Deliver
-`output` is the final JPEG: sRGB, quality 95, no metadata (so no GPS). On Mac it goes in `~/Pictures/feedready/`. On claude.ai it goes in `/mnt/user-data/outputs/`, where it shows as a download.
+`output` is the final JPEG: sRGB, quality 100 with full colour resolution (4:4:4), the crop's full pixel size unless the recipe set `max_edge`, no metadata (so no GPS). `file_mb` gives its size. If the user wants it lossless, pass `-o NAME.png` for a 16-bit PNG. On Mac it goes in `~/Pictures/feedready/`. On claude.ai it goes in `/mnt/user-data/outputs/`, where it shows as a download.
 
 On the Mac, send it with SendUserFile, along with the compare image. Then give a 2–4 line recap of what changed, and offer one optional next tweak.
 
 ## Notes
 - The recipe always uses coordinates of the original photo, before the crop. The crop is applied last.
-- Presets resize down only, to 1080 px wide. Smaller photos keep their size.
+- Presets only set the crop aspect; they never resize. Only `max_edge` shrinks the output, and only with the user's yes.
 - Inputs: JPEG, PNG, HEIC (iPhone), TIFF, WebP. HEIC on claude.ai needs pillow-heif; otherwise ask for a JPEG.
 - The source repo is `~/sideones/feedready`. Edit and test there (`~/.cache/feedready/venv/bin/python tests/selftest.py`), never in the installed plugin copy.

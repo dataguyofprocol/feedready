@@ -1,7 +1,7 @@
 {
   "name": "feedready",
   "displayName": "feedready",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Suggest and apply Lightroom-style photo edits for Instagram and LinkedIn, with region edits on faces, sky, scenery and any object you name. Mac engine on Core Image + Vision.",
   "author": {
     "name": "Parth Batra"
