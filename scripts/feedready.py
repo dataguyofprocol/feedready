@@ -27,7 +27,15 @@ sys.path.insert(0, str(Path(__file__).parent))
 import develop  # noqa: E402
 import diagnose  # noqa: E402
 import masks as maskmod  # noqa: E402
-from detect import CACHE, MissingCapability, Scene, engine_available, run_engine, segformer_available  # noqa: E402
+from detect import (  # noqa: E402
+    CACHE,
+    MissingCapability,
+    Scene,
+    edgetam_available,
+    engine_available,
+    run_engine,
+    segformer_available,
+)
 from imaging import cv2, load_rgb, luma, save_jpeg, save_mask, save_png16, to_u8  # noqa: E402
 
 CLAUDE_OUTPUTS = Path("/mnt/user-data/outputs")
@@ -125,6 +133,7 @@ def cmd_doctor(_args) -> dict:
         "engine (Core Image + Vision)": engine_available(),
         "opencv": cv2 is not None,
         "segformer scene masks": segformer_available(),
+        "object masks (EdgeTAM)": edgetam_available(),
         "output_dir": str(output_dir()),
     }
     try:
@@ -203,7 +212,7 @@ def cmd_masks(args) -> dict:
     path = work / "masks.jpg"
     sheet.save(path, quality=88)
     coverage = [None if m is None else round(float(m.mean()), 3) for m in built]
-    return {"contact_sheet": str(path), "mask_coverage": coverage}
+    return {"contact_sheet": str(path), "mask_coverage": coverage, "notes": scene.notes}
 
 
 def _prepass(img, recipe, built):
@@ -284,6 +293,7 @@ def cmd_apply(args) -> dict:
         "before": stats(before),
         "after": stats(result),
         "warnings": warnings,
+        "notes": scene.notes,
     }
 
 

@@ -97,6 +97,9 @@ def _base(spec: dict, scene: Scene) -> np.ndarray:
             out = np.maximum(out, scene.segment_mask(c, refine=spec.get("edge_refine", True)))
         return out
 
+    if kind == "object":
+        return scene.object_mask(spec.get("box"), spec.get("points", []), spec.get("exclude", []))[0]
+
     if kind == "sky":
         try:
             return scene.segment_mask("sky")

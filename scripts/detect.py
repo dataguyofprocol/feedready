@@ -1,4 +1,5 @@
-"""Scene understanding: Apple Vision (via feedready-engine) and SegFormer ADE20K.
+"""Scene understanding: Apple Vision (via feedready-engine), SegFormer ADE20K and
+EdgeTAM promptable object masks.
 
 Results are cached in the per-image work directory, so `inspect`, `masks` and
 `apply` pay for detection once.
@@ -19,6 +20,9 @@ ENGINE = CACHE / "bin" / "feedready-engine"
 SEGFORMER = CACHE / "models" / "segformer_b0_ade_q.onnx"
 SEGFORMER_LABELS = CACHE / "models" / "segformer_config.json"
 SEGFORMER_URL = "https://huggingface.co/Xenova/segformer-b0-finetuned-ade-512-512/resolve/main"
+EDGETAM_ENCODER = CACHE / "models" / "edgetam" / "vision_encoder.onnx"
+EDGETAM_DECODER = CACHE / "models" / "edgetam" / "prompt_encoder_mask_decoder.onnx"
+LOW_IOU = 0.7
 
 # Friendly names Claude may use -> ADE20K labels (summed).
 SEG_ALIASES = {
@@ -62,6 +66,8 @@ class Scene:
         self.img = img
         self._vision = None
         self._seg = None
+        self._edgetam = None
+        self.notes: list[str] = []
 
     # --- Vision ---
     def vision(self) -> dict:
@@ -130,13 +136,64 @@ class Scene:
             })
         return sorted(out, key=lambda d: -d["share"])
 
+    # --- EdgeTAM ---
+    def object_mask(self, box=None, points=(), exclude=()) -> tuple[np.ndarray, float]:
+        """Mask of the object a box and/or clicks point at (normalized coords); also its iou score."""
+        if box is None and not points:
+            raise ValueError("object mask needs a box or at least one point")
+        decoder, embeddings = self._edgetam_embeddings()
+        clicks = [*points, *exclude]
+        feeds = {
+            "input_points": np.array(clicks, np.float32).reshape(1, 1, -1, 2) * 1024,
+            "input_labels": np.array([1] * len(points) + [0] * len(exclude), np.int64).reshape(1, 1, -1),
+            "input_boxes": np.array([] if box is None else box, np.float32).reshape(1, -1, 4) * 1024,
+            **embeddings,
+        }
+        iou, logits = decoder.run(["iou_scores", "pred_masks"], feeds)
+        best = int(iou[0, 0].argmax())
+        score = float(iou[0, 0, best])
+        h, w = self.img.shape[:2]
+        logit = resize(np.ascontiguousarray(logits[0, 0, best]), w, h)
+        m = 1 / (1 + np.exp(-np.clip(logit, -30, 30)))
+        m = guided_filter(self.img, m.astype(np.float32), max(3, int(max(h, w) * 0.006)), 1e-4).clip(0, 1)
+        if score < LOW_IOU:
+            prompt = f"box {list(box)}" if box is not None else f"points {[list(p) for p in points]}"
+            self.notes.append(f"object mask for {prompt} is low-confidence (iou {score:.2f}): check it on the contact sheet")
+        return m.astype(np.float32), score
 
-def segformer_available() -> bool:
+    def _edgetam_embeddings(self):
+        if self._edgetam is None:
+            if not edgetam_available():
+                raise MissingCapability("object masks need onnxruntime + EdgeTAM (41 MB): run `setup.sh --models`")
+            import onnxruntime as ort
+
+            providers = ["CPUExecutionProvider"]  # CoreML splits the decoder and crashes on empty point tensors
+            encoder = ort.InferenceSession(str(EDGETAM_ENCODER), providers=providers)
+            decoder = ort.InferenceSession(str(EDGETAM_DECODER), providers=providers)
+            # Stretched to 1024x1024, not padded, so the 256px mask maps straight back onto the frame.
+            x = resize(self.img, 1024, 1024)
+            x = (x - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)
+            outs = encoder.run(None, {"pixel_values": x.transpose(2, 0, 1)[None].astype(np.float32)})
+            names = [o.name for o in encoder.get_outputs()]
+            self._edgetam = (decoder, dict(zip(names, outs)))
+        return self._edgetam
+
+
+def _onnxruntime() -> bool:
     try:
         import onnxruntime  # noqa: F401
     except ImportError:
         return False
-    return SEGFORMER.exists() and SEGFORMER_LABELS.exists()
+    return True
+
+
+def segformer_available() -> bool:
+    return _onnxruntime() and SEGFORMER.exists() and SEGFORMER_LABELS.exists()
+
+
+def edgetam_available() -> bool:
+    files = [f for m in (EDGETAM_ENCODER, EDGETAM_DECODER) for f in (m, m.with_name(m.name + "_data"))]
+    return _onnxruntime() and all(f.exists() for f in files)
 
 
 def _run_segformer(img: np.ndarray):

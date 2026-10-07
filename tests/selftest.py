@@ -21,7 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import develop  # noqa: E402
-from detect import engine_available  # noqa: E402
+import masks  # noqa: E402
+from detect import Scene, edgetam_available, engine_available  # noqa: E402
 from imaging import gaussian, load_rgb, luma, rgb_to_hsv, save_png16, srgb_to_linear  # noqa: E402
 
 FAILS = []
@@ -136,6 +137,9 @@ def main():
     print("[diagnostics]")
     _diagnostics(tmp)
 
+    print("[models]")
+    _object_mask()
+
     rect = develop.crop_rect(1000, 1500, {"aspect": "4:5", "focus": [0.5, 0.3], "focus_at": [0.5, 0.33]}, None)
     check("crop 4:5 geometry", rect[2] == 1000 and rect[3] == 1250 and rect[1] == 38, str(rect))
 
@@ -180,6 +184,26 @@ def _diagnostics(tmp):
     clean = _findings(tmp, "clean", card())
     check("a well-exposed neutral card gets no exposure or cast findings",
           "exposure" not in clean and "color_cast" not in clean, str(sorted(clean)))
+
+
+def _iou(m, truth):
+    b = m > 0.5
+    return float((b & truth).sum() / (b | truth).sum())
+
+
+def _object_mask():
+    if not edgetam_available():
+        print("  skip object mask (EdgeTAM model not installed)")
+        return
+    img = 0.1 + np.random.default_rng(2).normal(0, 0.03, (400, 600, 3)).astype(np.float32)
+    img[120:260, 200:380] = (0.9, 0.3, 0.1)
+    truth = np.zeros((400, 600), bool)
+    truth[120:260, 200:380] = True
+    scene = Scene(None, None, img.clip(0, 1))
+    iou = _iou(masks.build({"type": "object", "box": [190 / 600, 110 / 400, 390 / 600, 270 / 400]}, scene), truth)
+    check("object mask from a box finds the rectangle", iou >= 0.9, f"iou {iou:.3f}")
+    iou = _iou(masks.build({"type": "object", "points": [[290 / 600, 190 / 400]]}, scene), truth)
+    check("object mask from one click finds the rectangle", iou >= 0.8, f"iou {iou:.3f}")
 
 
 def _apply(renderer, recipe, src, out):
