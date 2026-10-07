@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Repo is a Claude Code plugin (`feedready`) that is also its own plugin marketplace (`.claude-plugin/marketplace.json`). The README is accurate — trust it, but the gotchas below are what agents get wrong.
+Repo is a Claude Code plugin (`feedready`) that is also its own plugin marketplace (`.claude-plugin/marketplace.json`). The README (users) and CONTRIBUTING.md (engine CLI, architecture, shipping, tests) are accurate — trust them, but the gotchas below are what agents get wrong.
 
 ## Commands
 
@@ -26,7 +26,7 @@ skills/feedready/setup.sh --segformer --models
 - **Claude Code runs an installed copy** at `~/.claude/plugins/cache/feedready/`. Never edit that copy. Edit the repo, then ship via: bump `version` in `.claude-plugin/plugin.json` → `claude plugin marketplace update feedready && claude plugin update feedready@feedready` → `/reload-plugins`.
 - Changing `skills/feedready/swift/feedready_engine.swift` requires rerunning `setup.sh` (it records a sha256; `doctor` reports the engine stale until rebuilt).
 - Any skill change means rebuilding and re-uploading `build_zip.sh` for the phone tier.
-- `assets/demo/` holds the README's "See it work" images, exported from a real session's work dir (`board.jpg`, `versions/v3-v4.jpg`, the v4 cards and map, and the final `-compare.jpg`). If you change how `board`, `cards`, `edit_map` or `pair` draw, regenerate them so the README stays truthful. Keep each under ~200 KB.
+- README art is generated, not drawn by hand: `assets/make_hero.py` renders `hero.webp` (2×, what GitHub shows) and the `hero.gif` fallback from a real session's work dir (`~/.cache/feedready/work/1-012c6c15/`), and `assets/make_talk.py` renders `art/talk.svg` as Geist outlines. `assets/demo/` holds that session's v4 cards and map at native resolution. If you change how `board`, `cards` or `edit_map` draw, regenerate them so the README stays truthful (CONTRIBUTING.md has the commands). Keep `hero.webp` under ~8 MB; the 2× WebP is what GitHub shows, so check it for ghosting (faint leftovers of earlier frames) after changing the encoder settings.
 - Commit messages use conventional commits scoped to the package: `feat(feedready): ...`, `fix(feedready): ...`.
 
 ## Architecture
