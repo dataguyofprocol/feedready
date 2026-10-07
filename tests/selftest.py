@@ -1,6 +1,6 @@
 """Self-test: every slider moves the image the right way, on both renderers.
 
-  .venv/bin/python tests/selftest.py
+  ~/.cache/feedready/venv/bin/python tests/selftest.py
 
 Builds a synthetic test card (gradient, colour patches, texture), applies each
 slider globally, and checks the expected direction on the Core Image renderer
@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "skills" / "feedready" / "scripts"))
 
 import develop  # noqa: E402
 import masks  # noqa: E402
@@ -42,7 +42,7 @@ def card() -> np.ndarray:
 
 
 def run(cmd, recipe, src, out):
-    res = subprocess.run([sys.executable, str(ROOT / "scripts" / "feedready.py"), cmd, json.dumps(recipe), str(src), "-o", str(out)],
+    res = subprocess.run([sys.executable, str(ROOT / "skills" / "feedready" / "scripts" / "feedready.py"), cmd, json.dumps(recipe), str(src), "-o", str(out)],
                          capture_output=True, text=True)
     if res.returncode:
         raise RuntimeError(res.stderr or res.stdout)

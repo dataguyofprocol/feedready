@@ -7,6 +7,7 @@ Results are cached in the per-image work directory, so `inspect`, `masks` and
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -17,6 +18,7 @@ from imaging import guided_filter, load_mask, min_filter, resize
 
 CACHE = Path.home() / ".cache" / "feedready"
 ENGINE = CACHE / "bin" / "feedready-engine"
+ENGINE_SOURCE = Path(__file__).resolve().parents[1] / "swift" / "feedready_engine.swift"
 SEGFORMER = CACHE / "models" / "segformer_b0_ade_q.onnx"
 SEGFORMER_LABELS = CACHE / "models" / "segformer_config.json"
 SEGFORMER_URL = "https://huggingface.co/Xenova/segformer-b0-finetuned-ade-512-512/resolve/main"
@@ -47,6 +49,15 @@ class MissingCapability(RuntimeError):
 
 def engine_available() -> bool:
     return ENGINE.exists()
+
+
+def engine_stale() -> bool:
+    """True when the compiled engine came from different Swift source than this copy of the skill."""
+    stamp = ENGINE.with_name(ENGINE.name + ".sha256")
+    if not engine_available() or not ENGINE_SOURCE.exists():
+        return False
+    built = stamp.read_text().strip() if stamp.exists() else ""
+    return built != hashlib.sha256(ENGINE_SOURCE.read_bytes()).hexdigest()
 
 
 def run_engine(*args: str) -> str:

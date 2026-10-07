@@ -7,12 +7,12 @@ description: Suggest the best Lightroom/Snapseed-style edits for a photo from me
 
 You plan the edits; `run.sh` renders them. On a Mac it uses Apple Core Image (adjustments) + Vision (person/subject/face masks) + a 4.4 MB SegFormer model (sky/mountain/water/tree masks) + EdgeTAM (a mask for any object you box or click) + MI-GAN (object removal). Elsewhere (claude.ai) a numpy fallback renders global edits, crops and geometric masks.
 
-Command (Mac): `~/.claude/skills/feedready/run.sh <cmd>`. On claude.ai use `python3 <this skill dir>/scripts/feedready.py <cmd>`. Every command prints JSON.
+Run every command from this skill's base directory: `<base>/run.sh <cmd>` on a Mac, `python3 <base>/scripts/feedready.py <cmd>` on claude.ai. `setup.sh` sits beside `run.sh`. Every command prints JSON.
 
 ## 0. Check the tier (first use in a session)
 Run `run.sh doctor`.
 - `tier: mac` with nothing in `missing`: full feature set.
-- `missing` lists something: **ask the user before running `setup.sh`**, and say what it downloads (Python packages ~90 MB from PyPI; `--segformer` adds the 4.4 MB scene model; `--models` adds the 69 MB object mask and heal models). Compiling the Swift engine downloads nothing. Never download a model or package without a yes.
+- `missing` lists something: **ask the user before running `<base>/setup.sh`**, and say what it downloads (Python packages ~90 MB from PyPI; `--segformer` adds the 4.4 MB scene model; `--models` adds the 69 MB object mask and heal models). Compiling the Swift engine downloads nothing. Never download a model or package without a yes.
 - `tier: basic` (claude.ai/phone): global sliders, crop/presets, and radial/linear/brush/polygon/luminance/color masks work. Masks of type person/subject/background/face/segment/object and the `heal` adjustment don't. For those, tell the user: "this one's best done on the Mac". Don't fake it with a poor approximation.
 
 ## 1. Inspect
@@ -63,4 +63,4 @@ On the Mac, send it with SendUserFile, along with the compare image. Then give a
 - The recipe always uses coordinates of the original photo, before the crop. The crop is applied last.
 - Presets resize down only, to 1080 px wide. Smaller photos keep their size.
 - Inputs: JPEG, PNG, HEIC (iPhone), TIFF, WebP. HEIC on claude.ai needs pillow-heif; otherwise ask for a JPEG.
-- Self-test after changing any code: `.venv/bin/python tests/selftest.py`.
+- The source repo is `~/sideones/feedready`. Edit and test there (`~/.cache/feedready/venv/bin/python tests/selftest.py`), never in the installed plugin copy.

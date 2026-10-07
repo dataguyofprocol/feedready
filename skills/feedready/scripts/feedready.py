@@ -33,6 +33,7 @@ from detect import (  # noqa: E402
     Scene,
     edgetam_available,
     engine_available,
+    engine_stale,
     migan_available,
     run_engine,
     segformer_available,
@@ -147,6 +148,8 @@ def cmd_doctor(_args) -> dict:
     missing = []
     if sys.platform == "darwin" and not engine_available():
         missing.append("engine: run setup.sh (compiles Swift, no download)")
+    elif engine_stale():
+        missing.append("engine: built from an older version of this skill; rerun setup.sh (no download)")
     if not segformer_available():
         missing.append("segformer: run setup.sh --segformer (4.4 MB download, ask first)")
     if not edgetam_available():

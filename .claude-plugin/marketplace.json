@@ -1,0 +1,15 @@
+{
+  "name": "feedready",
+  "owner": {
+    "name": "Parth Batra"
+  },
+  "description": "feedready: post-ready photo edits from Claude.",
+  "plugins": [
+    {
+      "name": "feedready",
+      "source": "./",
+      "description": "Suggest and apply Lightroom-style photo edits, including region and object edits, then hand back the final image.",
+      "version": "0.1.0"
+    }
+  ]
+}

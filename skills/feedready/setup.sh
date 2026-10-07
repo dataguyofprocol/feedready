@@ -1,5 +1,6 @@
 #!/bin/sh
-# One-time Mac setup. Downloads: Python packages (~90 MB from PyPI);
+# One-time Mac setup; rerun after updating the plugin. Everything lands in
+# ~/.cache/feedready, so the installed skill folder stays code-only. Downloads: Python packages (~90 MB from PyPI);
 # with --segformer also the 4.4 MB SegFormer-B0 scene model from HuggingFace;
 # with --models also EdgeTAM object masks (41 MB) and the MI-GAN heal model (28 MB).
 set -e
@@ -22,18 +23,23 @@ fetch() {
   mv "$1.part" "$1"
 }
 
-if [ ! -x "$DIR/.venv/bin/python" ]; then
+VENV="$CACHE/venv"
+if [ ! -x "$VENV/bin/python" ]; then
   if command -v uv >/dev/null; then
-    uv venv --python 3.14 "$DIR/.venv"
-    uv pip install --python "$DIR/.venv/bin/python" -r "$DIR/requirements.txt"
+    uv venv --python 3.14 "$VENV"
   else
-    python3 -m venv "$DIR/.venv"
-    "$DIR/.venv/bin/pip" install -r "$DIR/requirements.txt"
+    python3 -m venv "$VENV"
   fi
+fi
+if command -v uv >/dev/null; then
+  uv pip install -q --python "$VENV/bin/python" -r "$DIR/requirements.txt"
+else
+  "$VENV/bin/pip" install -q -r "$DIR/requirements.txt"
 fi
 
 if [ "$(uname)" = "Darwin" ]; then
   swiftc -O "$DIR/swift/feedready_engine.swift" -o "$CACHE/bin/feedready-engine"
+  shasum -a 256 "$DIR/swift/feedready_engine.swift" | cut -d" " -f1 > "$CACHE/bin/feedready-engine.sha256"
 fi
 
 if [ "$SEGFORMER" = 1 ]; then
