@@ -92,7 +92,8 @@ A recipe is JSON, passed as a file path or an inline string. This one crops for 
   "steps": [
     {"name": "lift eyes", "mask": {"type": "radial", "center": [0.555, 0.352], "radius": [0.07, 0.03]},
      "adjust": {"exposure": 0.4}},
-    {"name": "snow caps", "mask": {"type": "object", "box": [0.0, 0.40, 1.0, 0.56], "exclude": [[0.5, 0.45]]},
+    {"name": "snow caps", "mask": {"type": "object", "box": [0.0, 0.40, 1.0, 0.56],
+      "points": [[0.72, 0.45], [0.12, 0.47]], "exclude": [[0.5, 0.45]]},
      "adjust": {"clarity": 30, "dehaze": 15}},
     {"name": "remove strip", "mask": {"type": "object", "box": [0.39, 0.80, 0.44, 0.835], "grow": 0.004},
      "adjust": {"heal": true}}
