@@ -22,9 +22,11 @@ On a Mac the engine uses:
 - EdgeTAM for a mask of any object you box or click.
 - MI-GAN for object removal.
 
-Elsewhere (claude.ai) a numpy fallback renders global edits, looks, crops and geometric masks.
+Elsewhere (claude.ai, or any machine without the engine) a numpy fallback renders global edits, looks, crops and geometric masks.
 
 Run every command from this skill's base directory: `<base>/run.sh <cmd>` on a Mac, `python3 <base>/scripts/feedready.py <cmd>` on claude.ai. `setup.sh` sits beside `run.sh`. Every command prints JSON.
+
+To show the user an image, use your tool for sending files (SendUserFile in the Claude Code app). If you have none, give the file's absolute path.
 
 **Commands:**
 
@@ -48,7 +50,7 @@ Run `run.sh doctor`.
   - `--models`: the 69 MB object mask and heal models.
 
   Compiling the Swift engine downloads nothing. Never download a model or package without a yes.
-- **`tier: basic`** (claude.ai or phone):
+- **`tier: basic`** (claude.ai, phone, or no engine):
   - Works: global sliders, looks, crops, and radial, linear, brush, polygon, luminance and colour masks.
   - Doesn't work: person, subject, background, face, segment and object masks, and the `heal` adjustment. For those, say "this one's best done on the Mac". Don't fake it with a poor approximation.
 
@@ -80,7 +82,7 @@ Otherwise the board is your question. Build three directions, following vibes.md
 
 Run `run.sh board PHOTO A.json B.json C.json`. If `too_similar` lists a pair, push them apart and rerun.
 
-Send the board with SendUserFile and write:
+Show the board and write:
 - Your read of the photo, in 1–2 lines.
 - A, B and C, one line each: the feel, and what it does to this photo.
 - The destination question, if it's unknown.
@@ -119,7 +121,7 @@ Each round produces one version, `vN`, that the user sees.
    - Run vibes.md's checklist, and ask whether it hits the brief.
 
    Revise and re-render up to 3 times. Mention self-caught fixes only if they matter ("I pulled the background back; it was haloing your hair").
-4. **Show.** Send files with SendUserFile:
+4. **Show.** Show these files:
    - The first round: `compare`, `cards` and `map`.
    - Later rounds: `diff`.
    - On the Mac, also `review` for the slider.
@@ -145,7 +147,7 @@ Run `run.sh apply vN PHOTO`. It renders that version at full resolution:
 - **Metadata:** none, so no GPS.
 - **Lossless:** if the user wants it, pass `-o NAME.png` for a 16-bit PNG.
 
-On the Mac it goes in `~/Pictures/feedready/`; send `output` and `compare` with SendUserFile. On claude.ai it goes in `/mnt/user-data/outputs/`, where it shows as a download.
+On the Mac it goes in `~/Pictures/feedready/`; show `output` and `compare`. On claude.ai it goes in `/mnt/user-data/outputs/`, where it shows as a download.
 
 Close the way a photographer hands off: 2–4 lines on what you did to get the vibe.
 

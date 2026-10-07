@@ -172,6 +172,21 @@ What comes back:
 > [!NOTE]
 > The phone bundle ships without models. **Rebuild and re-upload the zip whenever the skill changes.**
 
+## Other agents
+
+`skills/feedready/` is a standard [Agent Skill](https://agentskills.io): a `SKILL.md` with `name` and `description`, plus its scripts and references. Any agent that reads that format can run it, provided it can look at images and run shell commands.
+
+1. Build the runtime once (step 2 of [Setup](#setup-mac)).
+2. Link the skill into the agent's skills folder. For Codex, and other agents that read `~/.agents/skills`:
+
+   ```bash
+   mkdir -p ~/.agents/skills && ln -s ~/sideones/feedready/skills/feedready ~/.agents/skills/feedready
+   ```
+
+   Other agents use their own folder, such as `.agent/skills/` in a project. Link the same directory there.
+
+The link points at this repo, so edits reach the agent with no version bump. The agent shows you files with whatever file-sending tool it has; without one, it gives you their paths.
+
 ## Driving the engine yourself
 
 Claude normally runs these. You can too, to debug or script edits. Every command prints JSON.
