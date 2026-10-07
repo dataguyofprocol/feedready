@@ -161,7 +161,9 @@ class Scene:
         m = guided_filter(self.img, m.astype(np.float32), r, 1e-4).clip(0, 1)
         if score < LOW_IOU:
             prompt = f"box {list(box)}" if box is not None else f"points {[list(p) for p in points]}"
-            self.notes.append(f"object mask for {prompt} is low-confidence (iou {score:.2f}): check it on the contact sheet")
+            note = f"object mask for {prompt} is low-confidence (iou {score:.2f}): check it on the contact sheet"
+            if note not in self.notes:
+                self.notes.append(note)
         return m.astype(np.float32), score
 
     def _edgetam_embeddings(self):
