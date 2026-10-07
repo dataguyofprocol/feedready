@@ -214,7 +214,7 @@ def migan_available() -> bool:
 def _run_segformer(img: np.ndarray):
     if not segformer_available():
         raise MissingCapability(
-            "scene masks (sky/mountain/water...) need onnxruntime + SegFormer-B0 (4.4 MB): run `feedready.py setup --segformer`"
+            "scene masks (sky/mountain/water...) need onnxruntime + SegFormer-B0 (4.4 MB): run `setup.sh --segformer`"
         )
     import onnxruntime as ort
 
