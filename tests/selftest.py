@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import develop  # noqa: E402
 import masks  # noqa: E402
-from detect import Scene, edgetam_available, engine_available  # noqa: E402
+from detect import Scene, edgetam_available, engine_available, migan_available  # noqa: E402
 from imaging import gaussian, load_rgb, luma, rgb_to_hsv, save_png16, srgb_to_linear  # noqa: E402
 
 FAILS = []
@@ -139,6 +139,7 @@ def main():
 
     print("[models]")
     _object_mask()
+    _heal()
 
     rect = develop.crop_rect(1000, 1500, {"aspect": "4:5", "focus": [0.5, 0.3], "focus_at": [0.5, 0.33]}, None)
     check("crop 4:5 geometry", rect[2] == 1000 and rect[3] == 1250 and rect[1] == 38, str(rect))
@@ -204,6 +205,33 @@ def _object_mask():
     check("object mask from a box finds the rectangle", iou >= 0.9, f"iou {iou:.3f}")
     iou = _iou(masks.build({"type": "object", "points": [[290 / 600, 190 / 400]]}, scene), truth)
     check("object mask from one click finds the rectangle", iou >= 0.8, f"iou {iou:.3f}")
+
+
+def _heal():
+    import detect
+    from imaging import cv2
+
+    h, w = 400, 600
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    clean = np.stack([0.3 + 0.3 * xx / w, 0.35 + 0.2 * yy / h, np.full((h, w), 0.45, np.float32)], -1)
+    clean = (clean + gaussian(np.random.default_rng(3).normal(0, 0.02, (h, w, 3)).astype(np.float32), 1)).clip(0, 1)
+    spotted = clean.copy()
+    spotted[190:210, 290:310] = 0.98
+    mask = np.zeros((h, w), np.float32)
+    mask[186:214, 286:314] = 1
+    backends = [("mi-gan", migan_available()), ("opencv fsr", cv2 is not None and hasattr(cv2, "xphoto"))]
+    saved = detect.MIGAN
+    for name, available in backends:
+        if not available:
+            print(f"  skip heal ({name} not installed)")
+            continue
+        healed = develop.heal(spotted, mask)
+        inside = float(np.abs(healed[190:210, 290:310] - clean[190:210, 290:310]).mean())
+        outside = float(np.abs(healed[:150] - spotted[:150]).max())
+        check(f"heal ({name}) fills the blob from its surroundings", inside < 0.05, f"mean abs diff {inside:.3f}")
+        check(f"heal ({name}) leaves the rest untouched", outside <= 1.5 / 255, f"max err {outside * 255:.2f}/255")
+        detect.MIGAN = Path("/nonexistent")  # next backend down the chain
+    detect.MIGAN = saved
 
 
 def _apply(renderer, recipe, src, out):

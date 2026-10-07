@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from detect import MIGAN, migan_available
 from imaging import (
     cv2,
     gaussian,
@@ -20,6 +21,7 @@ from imaging import (
     rgb_to_hsv,
     smoothstep,
     srgb_to_linear,
+    to_u8,
 )
 
 # name: (min, max, meaning) - Lightroom JPEG-mode units
@@ -279,15 +281,27 @@ def dehaze(img: np.ndarray, amount: float) -> np.ndarray:
 
 
 def heal(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """Inpaint the masked spots from their surroundings (needs OpenCV)."""
-    if cv2 is None:
+    """Fill the masked region from its surroundings: MI-GAN, else OpenCV FSR."""
+    hole = 1 - min_filter(1 - (mask > 0.3).astype(np.float32), 2)
+    u8 = to_u8(img)
+    if migan_available():
+        fixed = _migan(u8, hole)
+    elif cv2 is not None and hasattr(cv2, "xphoto"):
+        fixed = np.zeros_like(u8)
+        cv2.xphoto.inpaint(u8, (1 - hole).astype(np.uint8), fixed, cv2.xphoto.INPAINT_FSR_FAST)
+    else:
         raise RuntimeError("heal needs opencv (Mac tier)")
-    hole = (mask > 0.3).astype(np.uint8) * 255
-    hole = cv2.dilate(hole, np.ones((5, 5), np.uint8))
-    bgr = cv2.cvtColor((img.clip(0, 1) * 255 + 0.5).astype(np.uint8), cv2.COLOR_RGB2BGR)
-    fixed = cv2.cvtColor(cv2.inpaint(bgr, hole, 5, cv2.INPAINT_TELEA), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
-    soft = gaussian(hole.astype(np.float32) / 255, 2)[..., None]
-    return img * (1 - soft) + fixed * soft
+    soft = gaussian(hole, 2)[..., None]
+    return img * (1 - soft) + fixed.astype(np.float32) / 255 * soft
+
+
+def _migan(u8: np.ndarray, hole: np.ndarray) -> np.ndarray:
+    import onnxruntime as ort
+
+    session = ort.InferenceSession(str(MIGAN), providers=["CPUExecutionProvider"])
+    known = ((1 - hole) * 255).astype(np.uint8)
+    out = session.run(None, {"image": u8.transpose(2, 0, 1)[None], "mask": known[None, None]})[0]
+    return out[0].transpose(1, 2, 0)
 
 
 # --- crop -----------------------------------------------------------------

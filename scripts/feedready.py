@@ -33,6 +33,7 @@ from detect import (  # noqa: E402
     Scene,
     edgetam_available,
     engine_available,
+    migan_available,
     run_engine,
     segformer_available,
 )
@@ -134,6 +135,7 @@ def cmd_doctor(_args) -> dict:
         "opencv": cv2 is not None,
         "segformer scene masks": segformer_available(),
         "object masks (EdgeTAM)": edgetam_available(),
+        "heal model (MI-GAN)": migan_available(),
         "output_dir": str(output_dir()),
     }
     try:
@@ -148,7 +150,7 @@ def cmd_doctor(_args) -> dict:
     if not segformer_available():
         missing.append("segformer: run setup.sh --segformer (4.4 MB download, ask first)")
     if cv2 is None:
-        missing.append("opencv: grabcut refine + heal unavailable")
+        missing.append("opencv: grabcut refine unavailable, and heal too unless MI-GAN is installed")
     report["missing"] = missing
     return report
 

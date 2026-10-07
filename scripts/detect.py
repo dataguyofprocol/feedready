@@ -22,6 +22,7 @@ SEGFORMER_LABELS = CACHE / "models" / "segformer_config.json"
 SEGFORMER_URL = "https://huggingface.co/Xenova/segformer-b0-finetuned-ade-512-512/resolve/main"
 EDGETAM_ENCODER = CACHE / "models" / "edgetam" / "vision_encoder.onnx"
 EDGETAM_DECODER = CACHE / "models" / "edgetam" / "prompt_encoder_mask_decoder.onnx"
+MIGAN = CACHE / "models" / "migan_pipeline_v2.onnx"
 LOW_IOU = 0.7
 
 # Friendly names Claude may use -> ADE20K labels (summed).
@@ -194,6 +195,10 @@ def segformer_available() -> bool:
 def edgetam_available() -> bool:
     files = [f for m in (EDGETAM_ENCODER, EDGETAM_DECODER) for f in (m, m.with_name(m.name + "_data"))]
     return _onnxruntime() and all(f.exists() for f in files)
+
+
+def migan_available() -> bool:
+    return _onnxruntime() and MIGAN.exists()
 
 
 def _run_segformer(img: np.ndarray):
