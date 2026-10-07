@@ -1,24 +1,55 @@
-# feedready
+<p align="center">
+  <img src="assets/logo.svg" width="96" alt="feedready logo">
+</p>
 
-feedready is a Claude skill that edits phone photos for Instagram and LinkedIn. You share a photo. Claude measures it, suggests up to six ranked edits with the evidence behind each, and waits for your pick. It then applies them, including edits to specific regions such as your face, the sky, a mountain, or one object. You get back a finished JPEG and a before/after image.
+<h1 align="center">feedready</h1>
 
-It runs in two places:
+<p align="center">
+  <b>Hand Claude a phone photo. Get back one that's ready for Instagram or LinkedIn.</b>
+</p>
 
-| Where | What works |
-|---|---|
-| **Mac** (Claude Code, desktop app or terminal) | Everything: Lightroom-style sliders on Apple Core Image; person, subject and face masks from Apple Vision; sky and mountain masks; box/click object masks; object removal |
-| **Phone** (claude.ai app, as an uploaded skill) | Crops, global sliders, and shape, brightness and colour masks. Anything that needs a model is routed to the Mac. |
+<p align="center">
+  <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
+  <img src="https://img.shields.io/badge/macOS-14%2B-000000?logo=apple" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white" alt="Python 3.14">
+</p>
 
-## Requirements
+---
 
-- An Apple Silicon Mac on macOS 14 or later (built and tested on macOS 26, M4).
-- Xcode Command Line Tools, for `swiftc`. Install with `xcode-select --install`.
-- `uv` (recommended) or Python 3.14.
-- About 400 MB of disk, all under `~/.cache/feedready`: a 263 MB Python venv, 71 MB of models, the compiled engine, and per-photo working files.
+Claude doesn't eyeball your photo. It **measures it first**, then suggests up to six edits ranked by impact, each backed by a number like *"you're 2.9 stops darker than the sky"*. You pick. It applies them, down to just your face, the sky or one stray object.
 
-## Install on the Mac
+```mermaid
+flowchart LR
+    A["Your photo"] --> B["Measure<br/>exposure, cast, haze, face"]
+    B --> C["Up to 6 ranked edits<br/>with evidence"]
+    C --> D{"You pick"}
+    D --> E["Mask + render"]
+    E --> F["JPEG +<br/>before/after"]
+```
 
-feedready is a Claude Code plugin, and this repo is its own plugin marketplace. Install it once:
+**Nothing renders until you've picked.**
+
+## Mac or phone
+
+| | Mac | Phone |
+|---|:---:|:---:|
+| Crops (Instagram 4:5, LinkedIn square, story 9:16) | ✅ | ✅ |
+| Lightroom-style global sliders | ✅ | ✅ |
+| Shape, brightness and colour masks | ✅ | ✅ |
+| Person, subject and face masks | ✅ | |
+| Sky, mountain, water and tree masks | ✅ | |
+| Masks for any object you box or click | ✅ | |
+| Object removal | ✅ | |
+| **Runs in** | Claude Code (desktop or terminal) | claude.ai app, as an uploaded skill |
+| **Renders with** | Apple Core Image + Vision | numpy |
+
+On the phone, ask for anything that needs a model and Claude tells you to do that edit on the Mac instead of faking it.
+
+## Setup (Mac)
+
+**You need:** an Apple Silicon Mac on macOS 14+, Xcode Command Line Tools (`xcode-select --install`), and `uv` or Python 3.14. Built and tested on macOS 26, M4.
+
+**1. Install the plugin.** This repo is a Claude Code plugin and its own marketplace.
 
 ```bash
 claude plugin marketplace add ~/sideones/feedready
@@ -28,56 +59,65 @@ claude plugin marketplace add ~/sideones/feedready
 claude plugin install feedready@feedready
 ```
 
-Claude Code copies the plugin into `~/.claude/plugins/cache/feedready/`. Then set up the runtime from the repo:
+**2. Build the runtime.** Safe to rerun.
 
 ```bash
 ~/sideones/feedready/skills/feedready/setup.sh --segformer --models
 ```
 
-`setup.sh` is safe to rerun. Everything it creates lives in `~/.cache/feedready`, so the plugin copy stays code-only. It does four things:
+| What it sets up | Size | For |
+|---|---:|---|
+| Python 3.14 venv | ~90 MB download | everything |
+| Swift engine | compiled locally | Core Image render, Vision masks |
+| SegFormer-B0 (`--segformer`) | 4.4 MB | sky, mountain, water, tree masks |
+| EdgeTAM (`--models`) | 41 MB | object masks |
+| MI-GAN (`--models`) | 28 MB | object removal |
 
-1. Creates `~/.cache/feedready/venv` with Python 3.14 and installs `requirements.txt` from PyPI (about 90 MB download).
-2. Compiles `swift/feedready_engine.swift` to `~/.cache/feedready/bin/feedready-engine`, and records the source hash so `doctor` can tell when the engine is out of date. This downloads nothing.
-3. With `--segformer`, it downloads the SegFormer-B0 scene model (4.4 MB) for sky, mountain, water and tree masks.
-4. With `--models`, it downloads EdgeTAM (41 MB, object masks) and MI-GAN (28 MB, object removal).
+All of it lives in `~/.cache/feedready` (about **400 MB** total). You're done when the `doctor` report at the end says `"tier": "mac"` and `"missing": []`.
 
-When it finishes, it prints the `doctor` report. A complete install shows `"tier": "mac"` and `"missing": []`.
+## Editing a photo
 
-## Use it in Claude Code
-
-Open any Claude Code session, attach a photo, and either ask naturally ("make this insta ready") or invoke the skill by name. Plugin skills are namespaced, so the full name is `feedready:feedready`:
-
-```
-/feedready:feedready make this insta ready
-```
+Attach a photo in any Claude Code session and ask. "make this insta ready" works, or call the skill by name:
 
 ```
 /feedready:feedready suggest edits for my linkedin profile picture
 ```
 
-Claude replies with a numbered list of suggestions. Reply `go` to apply all of them, a list of numbers such as `1, 3, 4`, or a tweak such as "2 but subtler". Claude then shows you the masks it built, renders the edit, checks the before/after, and sends you the final image.
+Claude replies with a numbered list. Then:
 
-If you already have a list of edits, for example from an earlier chat, paste it and say `apply`. Claude skips the suggestion step and maps each item onto an edit.
+| You reply | Claude does |
+|---|---|
+| `go` | applies all of them |
+| `1, 3, 4` | applies just those |
+| `2 but subtler` | adjusts that one, then applies |
+| a pasted edit list + `apply` | skips suggesting, maps each item to an edit |
 
-Final images go to `~/Pictures/feedready/`. Each one is an sRGB JPEG at quality 95 with no metadata (so no GPS location), saved next to a `-compare.jpg` before/after.
+What comes back:
 
-## Use it from the phone
+| | |
+|---|---|
+| **Where** | `~/Pictures/feedready/`, next to a `-compare.jpg` before/after |
+| **Format** | sRGB JPEG, quality 100, full colour resolution |
+| **Size** | full resolution, crops only. Over 30 MP? Claude asks whether to shrink first. |
+| **Privacy** | metadata stripped, so **no GPS location** in your post |
 
-1. On the Mac, build the upload bundle:
+## On your phone
+
+1. Build the bundle on the Mac. It lands at `~/Desktop/feedready.zip` (pass a path to change that).
 
    ```bash
    ~/sideones/feedready/build_zip.sh
    ```
 
-   It writes `~/Desktop/feedready.zip`. Pass a path to write it somewhere else.
-2. In claude.ai, open Settings → Capabilities → Skills and upload the zip.
-3. In any chat, attach a photo and ask for edits. Downloads appear in the chat.
+2. In claude.ai, upload it under **Settings → Capabilities → Skills**.
+3. Attach a photo in any chat and ask for edits.
 
-The phone tier ships no models. When an edit needs one (person, sky, object masks, or removal), Claude tells you to do that one on the Mac. Rebuild and re-upload the zip whenever the skill changes.
+> [!NOTE]
+> The phone bundle ships without models. **Rebuild and re-upload the zip whenever the skill changes.**
 
-## Run the engine directly
+## Driving the engine yourself
 
-Claude normally drives these commands. You can run them yourself to debug or script edits. Every command prints JSON.
+Claude normally runs these. You can too, to debug or script edits. Every command prints JSON.
 
 ```bash
 cd ~/sideones/feedready/skills/feedready
@@ -87,12 +127,14 @@ cd ~/sideones/feedready/skills/feedready
 ./run.sh apply recipe.json photo.jpg -o out.jpg
 ```
 
-- `doctor` reports the tier and anything missing.
-- `inspect` writes a coordinate grid image, brightness stats, detected faces and scene classes, and `diagnostics.findings`: measured problems, each with a ready-made recipe step.
-- `masks` writes a contact sheet with each step's mask in red.
-- `apply` renders the image and writes the compare image. Without `-o`, the output lands in `~/Pictures/feedready/`.
+| Command | What you get |
+|---|---|
+| `doctor` | the tier and anything missing |
+| `inspect` | a coordinate grid, brightness stats, faces, scene classes, and `diagnostics.findings` (each problem with a ready-made recipe step) |
+| `masks` | a contact sheet with every step's mask in red |
+| `apply` | the rendered photo and compare image, in `~/Pictures/feedready/` unless you pass `-o` |
 
-A recipe is JSON, passed as a file path or an inline string. This one crops for Instagram, lifts the eyes, and removes a reflective strip:
+A recipe is JSON, as a file or an inline string. This one crops for Instagram, brightens the eyes, adds bite to the snow caps and removes a reflective strip:
 
 ```json
 {
@@ -110,75 +152,96 @@ A recipe is JSON, passed as a file path or an inline string. This one crops for 
 }
 ```
 
-Coordinates are fractions of the original photo, origin top-left. Read them off the `inspect` grid. `reference/recipe.md` lists every slider, mask type, combinator and preset.
+> [!IMPORTANT]
+> Coordinates are **fractions of the original photo, origin top-left**, before the crop. Read them off the `inspect` grid, not by eye.
 
-## How it works
+Every slider, mask type, combinator and preset is in [`reference/recipe.md`](skills/feedready/reference/recipe.md).
 
+## Under the hood
+
+```mermaid
+flowchart LR
+    P(["photo"]) --> I["<b>inspect</b><br/>diagnose.py"]
+    I --> S["Claude suggests,<br/>you pick"]
+    S --> R(["recipe"])
+    R --> M["<b>masks</b><br/>masks.py, detect.py"]
+    M --> X["<b>prepass</b><br/>develop.py"]
+    X --> E{"Swift engine<br/>built?"}
+    E -->|"yes (Mac)"| C["Core Image render"]
+    E -->|"no (phone)"| N["numpy render"]
+    C --> O(["JPEG + compare"])
+    N --> O
 ```
-photo ─► inspect ─► diagnostics + grid ─► Claude suggests ─► you pick
-                                                              │
-     final JPEG ◄─ Core Image render ◄─ prepass ◄─ masks ◄─ recipe
+
+All paths are under `skills/feedready/`:
+
+| File | Owns |
+|---|---|
+| `scripts/feedready.py` | the CLI and the pipeline: working copy, masks, prepass, render, compare |
+| `scripts/diagnose.py` | the checks behind every suggestion (exposure, subject vs background, face, colour cast, haze, sky, bright distractions, headroom and crop). **Add a check as one function in `CHECKS`.** |
+| `scripts/masks.py` | mask specs to masks, from simple shapes to EdgeTAM objects, plus combinators and edge refinement |
+| `scripts/detect.py` | model access and per-photo caching. **Every model path lives here.** |
+| `scripts/develop.py` | sliders to engine ops, and the prepass: dehaze, clarity and texture via a guided filter, heal via MI-GAN |
+| `swift/feedready_engine.swift` | decode, Vision masks and the Core Image render |
+
+Per-photo working files are cached in `~/.cache/feedready/work/<photo>-<hash>/`.
+
+## Changing the skill
+
+Claude Code runs an **installed copy**, not this repo. Changes only reach it through a version bump:
+
+```mermaid
+flowchart LR
+    A["Edit + test<br/>in this repo"] --> B["Bump version in<br/>plugin.json, commit"]
+    B --> C["marketplace update +<br/>plugin update"]
+    C --> D{"Touched the<br/>Swift engine?"}
+    D -->|yes| E["Rerun setup.sh"]
+    D -->|no| F["/reload-plugins"]
+    E --> F
+    F -.-> G["Rebuild + re-upload<br/>the phone zip"]
 ```
 
-- `scripts/feedready.py` is the CLI and the pipeline: working copy, masks, prepass, render, compare.
-- `scripts/diagnose.py` holds the measured checks behind the suggestions: exposure, subject vs background, face, colour cast, haze, sky, bright distractions, and headroom/crop. Each check is one function in the `CHECKS` list.
-- `scripts/masks.py` turns mask specs into masks: shapes, ranges, Vision, SegFormer, EdgeTAM objects, combinators, edge refinement.
-- `scripts/detect.py` handles model access and per-photo caching (`Scene`). All model paths live here.
-- `scripts/develop.py` maps Lightroom-style sliders to engine operations, and runs the prepass: dehaze, clarity and texture with an edge-aware guided filter, and heal with MI-GAN.
-- `swift/feedready_engine.swift` is the Core Image and Vision executable: decode, Vision masks, and the render.
-- Without the Swift engine, a numpy renderer takes over. That is the phone tier.
+The update step:
 
-Working files for each photo are cached under `~/.cache/feedready/work/<photo>-<hash>/`.
+```bash
+claude plugin marketplace update feedready && claude plugin update feedready@feedready
+```
 
-## Change the skill
-
-The repo at `~/sideones/feedready` is the source. Claude Code runs the installed copy, so edits reach it only through a version bump:
-
-1. Edit and test in the repo.
-2. Bump `version` in `.claude-plugin/plugin.json` and commit.
-3. Pull the new version into Claude Code:
-
-   ```bash
-   claude plugin marketplace update feedready && claude plugin update feedready@feedready
-   ```
-
-4. If you changed `swift/feedready_engine.swift`, rerun `skills/feedready/setup.sh`. `doctor` reports a stale engine until you do.
-5. Run `/reload-plugins` in an open session, or start a new one.
-
-## Publish on GitHub
-
-Push the repo, then anyone (including you on another Mac) installs it with:
+To share it, push the repo to GitHub. Anyone can then install with this, and run `setup.sh` from the installed copy in `~/.claude/plugins/cache/feedready/`:
 
 ```bash
 claude plugin marketplace add <github-user>/feedready && claude plugin install feedready@feedready
 ```
 
-followed by `setup.sh` from the installed copy under `~/.claude/plugins/cache/feedready/`.
-
-## Test
+## Tests
 
 ```bash
 cd ~/sideones/feedready
 ~/.cache/feedready/venv/bin/python tests/selftest.py
 ```
 
-This checks every slider's direction on both renderers, mask blending, crop geometry, the diagnostics, object masks and heal. It must end with `ALL PASSED`. Model checks print `skip` when the model isn't installed.
+Covers every slider's direction on both renderers, mask blending, crop geometry, the diagnostics, object masks and heal. It must end with `ALL PASSED`.
 
-## Troubleshooting
+> [!TIP]
+> Model checks print `skip` when the model isn't installed. **A pass with skips isn't full coverage.**
 
-| Symptom | Fix |
+## When things go wrong
+
+| Problem | Fix |
 |---|---|
-| `doctor` lists `engine` as missing or out of date | Run `xcode-select --install` if needed, then `skills/feedready/setup.sh` |
-| `needs SegFormer` or `object masks need … EdgeTAM` | Run `skills/feedready/setup.sh --segformer --models` |
+| `doctor` says `engine` is missing or out of date | `xcode-select --install` if needed, then `skills/feedready/setup.sh` |
+| `needs SegFormer` or `object masks need … EdgeTAM` | `skills/feedready/setup.sh --segformer --models` |
 | A mask spills onto the wrong area | Check the `masks` contact sheet. Subtract `person` or `sky`, tighten the object box, or add `exclude` points. |
-| `notes` says an object mask is low-confidence | The box probably catches two things. Tighten it or add a positive point inside the object. |
-| HEIC fails on the phone | Send a JPEG; the claude.ai sandbox may lack HEIC support |
-| Want to start fresh for a photo | Delete its folder under `~/.cache/feedready/work/` |
+| `notes` calls an object mask low-confidence | The box is probably catching two things. Tighten it or add a point inside the object. |
+| HEIC fails on the phone | Send a JPEG. The claude.ai sandbox may not read HEIC. |
+| You want a clean slate for a photo | Delete its folder in `~/.cache/feedready/work/` |
 
-## Licences of the downloaded models
+## Model licences
 
-- EdgeTAM: Apache-2.0.
-- MI-GAN: MIT. Its training data is research-only.
-- SegFormer-B0: NVIDIA source licence, non-commercial.
+| Model | Licence |
+|---|---|
+| EdgeTAM | Apache-2.0 |
+| MI-GAN | MIT (training data is research-only) |
+| SegFormer-B0 | NVIDIA source licence, **non-commercial** |
 
-All three are fine for personal posts. Check the licences before any commercial use.
+Fine for your own posts. Check them before using feedready commercially.
