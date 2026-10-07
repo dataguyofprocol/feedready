@@ -206,6 +206,15 @@ def _object_mask():
     iou = _iou(masks.build({"type": "object", "points": [[290 / 600, 190 / 400]]}, scene), truth)
     check("object mask from one click finds the rectangle", iou >= 0.8, f"iou {iou:.3f}")
 
+    h, w = 1350, 900
+    img = 0.1 + np.random.default_rng(2).normal(0, 0.03, (h, w, 3)).astype(np.float32)
+    img[700:706, 350:550] = (0.95, 0.9, 0.3)
+    truth = np.zeros((h, w), bool)
+    truth[700:706, 350:550] = True
+    m = masks.build({"type": "object", "box": [340 / w, 690 / h, 560 / w, 716 / h]}, Scene(None, None, img.clip(0, 1)))
+    iou = _iou(m, truth)
+    check("object mask keeps a thin strip at full strength", iou >= 0.5 and m.max() > 0.9, f"iou {iou:.3f} max {m.max():.2f}")
+
 
 def _heal():
     import detect

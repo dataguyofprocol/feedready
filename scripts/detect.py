@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from imaging import guided_filter, load_mask, resize
+from imaging import guided_filter, load_mask, min_filter, resize
 
 CACHE = Path.home() / ".cache" / "feedready"
 ENGINE = CACHE / "bin" / "feedready-engine"
@@ -156,7 +156,9 @@ class Scene:
         h, w = self.img.shape[:2]
         logit = resize(np.ascontiguousarray(logits[0, 0, best]), w, h)
         m = 1 / (1 + np.exp(-np.clip(logit, -30, 30)))
-        m = guided_filter(self.img, m.astype(np.float32), max(3, int(max(h, w) * 0.006)), 1e-4).clip(0, 1)
+        # A radius wider than the object erases it (a strap, a reflective strip), so cap it by its width.
+        r = max(1, min(max(3, int(max(h, w) * 0.006)), int(_width(m > 0.5) / 3)))
+        m = guided_filter(self.img, m.astype(np.float32), r, 1e-4).clip(0, 1)
         if score < LOW_IOU:
             prompt = f"box {list(box)}" if box is not None else f"points {[list(p) for p in points]}"
             self.notes.append(f"object mask for {prompt} is low-confidence (iou {score:.2f}): check it on the contact sheet")
@@ -178,6 +180,12 @@ class Scene:
             names = [o.name for o in encoder.get_outputs()]
             self._edgetam = (decoder, dict(zip(names, outs)))
         return self._edgetam
+
+
+def _width(shape: np.ndarray) -> float:
+    """Mean width in pixels of a binary shape: 2 * area / boundary length."""
+    boundary = shape & (min_filter(shape.astype(np.float32), 1) < 0.5)
+    return 2 * float(shape.sum()) / max(1, int(boundary.sum()))
 
 
 def _onnxruntime() -> bool:
