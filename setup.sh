@@ -1,10 +1,26 @@
 #!/bin/sh
 # One-time Mac setup. Downloads: Python packages (~90 MB from PyPI);
-# with --segformer also the 4.4 MB SegFormer-B0 scene model from HuggingFace.
+# with --segformer also the 4.4 MB SegFormer-B0 scene model from HuggingFace;
+# with --models also EdgeTAM object masks (41 MB) and the MI-GAN heal model (28 MB).
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 CACHE="$HOME/.cache/feedready"
+SEGFORMER=0
+MODELS=0
+for arg in "$@"; do
+  case "$arg" in
+    --segformer) SEGFORMER=1 ;;
+    --models) MODELS=1 ;;
+    *) echo "usage: setup.sh [--segformer] [--models]" >&2; exit 2 ;;
+  esac
+done
 mkdir -p "$CACHE/bin" "$CACHE/models"
+
+# Download to a temp name so an interrupted fetch never looks like an installed model.
+fetch() {
+  curl -sSfL -o "$1.part" "$2"
+  mv "$1.part" "$1"
+}
 
 if [ ! -x "$DIR/.venv/bin/python" ]; then
   if command -v uv >/dev/null; then
@@ -20,10 +36,19 @@ if [ "$(uname)" = "Darwin" ]; then
   swiftc -O "$DIR/swift/feedready_engine.swift" -o "$CACHE/bin/feedready-engine"
 fi
 
-if [ "$1" = "--segformer" ]; then
+if [ "$SEGFORMER" = 1 ]; then
   BASE=https://huggingface.co/Xenova/segformer-b0-finetuned-ade-512-512/resolve/main
-  curl -sSfL -o "$CACHE/models/segformer_b0_ade_q.onnx" "$BASE/onnx/model_quantized.onnx"
-  curl -sSfL -o "$CACHE/models/segformer_config.json" "$BASE/config.json"
+  fetch "$CACHE/models/segformer_b0_ade_q.onnx" "$BASE/onnx/model_quantized.onnx"
+  fetch "$CACHE/models/segformer_config.json" "$BASE/config.json"
+fi
+
+if [ "$MODELS" = 1 ]; then
+  mkdir -p "$CACHE/models/edgetam"
+  BASE=https://huggingface.co/onnx-community/EdgeTAM-ONNX/resolve/main/onnx
+  for f in vision_encoder.onnx vision_encoder.onnx_data prompt_encoder_mask_decoder.onnx prompt_encoder_mask_decoder.onnx_data; do
+    fetch "$CACHE/models/edgetam/$f" "$BASE/$f"
+  done
+  fetch "$CACHE/models/migan_pipeline_v2.onnx" https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx
 fi
 
 "$DIR/run.sh" doctor

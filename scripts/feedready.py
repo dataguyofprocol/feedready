@@ -149,6 +149,10 @@ def cmd_doctor(_args) -> dict:
         missing.append("engine: run setup.sh (compiles Swift, no download)")
     if not segformer_available():
         missing.append("segformer: run setup.sh --segformer (4.4 MB download, ask first)")
+    if not edgetam_available():
+        missing.append("edgetam: run setup.sh --models (69 MB download, ask first)")
+    if not migan_available():
+        missing.append("migan: run setup.sh --models (69 MB download, ask first)")
     if cv2 is None:
         missing.append("opencv: grabcut refine unavailable, and heal too unless MI-GAN is installed")
     report["missing"] = missing
