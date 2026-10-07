@@ -14,21 +14,30 @@ It runs in two places:
 - An Apple Silicon Mac on macOS 14 or later (built and tested on macOS 26, M4).
 - Xcode Command Line Tools, for `swiftc`. Install with `xcode-select --install`.
 - `uv` (recommended) or Python 3.14.
-- About 400 MB of disk: a 263 MB Python venv, 71 MB of models, plus working files.
+- About 400 MB of disk, all under `~/.cache/feedready`: a 263 MB Python venv, 71 MB of models, the compiled engine, and per-photo working files.
 
 ## Install on the Mac
 
-The skill lives in `~/.claude/skills/feedready`. Claude Code picks up skills from there automatically.
+feedready is a Claude Code plugin, and this repo is its own plugin marketplace. Install it once:
 
 ```bash
-cd ~/.claude/skills/feedready
-./setup.sh --segformer --models
+claude plugin marketplace add ~/sideones/feedready
 ```
 
-`setup.sh` is safe to rerun. It does four things:
+```bash
+claude plugin install feedready@feedready
+```
 
-1. Creates `.venv` with Python 3.14 and installs `requirements.txt` from PyPI (about 90 MB download).
-2. Compiles `swift/feedready_engine.swift` to `~/.cache/feedready/bin/feedready-engine`. This downloads nothing.
+Claude Code copies the plugin into `~/.claude/plugins/cache/feedready/`. Then set up the runtime from the repo:
+
+```bash
+~/sideones/feedready/skills/feedready/setup.sh --segformer --models
+```
+
+`setup.sh` is safe to rerun. Everything it creates lives in `~/.cache/feedready`, so the plugin copy stays code-only. It does four things:
+
+1. Creates `~/.cache/feedready/venv` with Python 3.14 and installs `requirements.txt` from PyPI (about 90 MB download).
+2. Compiles `swift/feedready_engine.swift` to `~/.cache/feedready/bin/feedready-engine`, and records the source hash so `doctor` can tell when the engine is out of date. This downloads nothing.
 3. With `--segformer`, it downloads the SegFormer-B0 scene model (4.4 MB) for sky, mountain, water and tree masks.
 4. With `--models`, it downloads EdgeTAM (41 MB, object masks) and MI-GAN (28 MB, object removal).
 
@@ -36,14 +45,14 @@ When it finishes, it prints the `doctor` report. A complete install shows `"tier
 
 ## Use it in Claude Code
 
-Open any Claude Code session, attach a photo, and either ask naturally or invoke the skill by name:
+Open any Claude Code session, attach a photo, and either ask naturally ("make this insta ready") or invoke the skill by name. Plugin skills are namespaced, so the full name is `feedready:feedready`:
 
 ```
-/feedready make this insta ready
+/feedready:feedready make this insta ready
 ```
 
 ```
-/feedready suggest edits for my linkedin profile picture
+/feedready:feedready suggest edits for my linkedin profile picture
 ```
 
 Claude replies with a numbered list of suggestions. Reply `go` to apply all of them, a list of numbers such as `1, 3, 4`, or a tweak such as "2 but subtler". Claude then shows you the masks it built, renders the edit, checks the before/after, and sends you the final image.
@@ -57,7 +66,7 @@ Final images go to `~/Pictures/feedready/`. Each one is an sRGB JPEG at quality 
 1. On the Mac, build the upload bundle:
 
    ```bash
-   ~/.claude/skills/feedready/build_zip.sh
+   ~/sideones/feedready/build_zip.sh
    ```
 
    It writes `~/Desktop/feedready.zip`. Pass a path to write it somewhere else.
@@ -71,7 +80,7 @@ The phone tier ships no models. When an edit needs one (person, sky, object mask
 Claude normally drives these commands. You can run them yourself to debug or script edits. Every command prints JSON.
 
 ```bash
-cd ~/.claude/skills/feedready
+cd ~/sideones/feedready/skills/feedready
 ./run.sh doctor
 ./run.sh inspect photo.jpg
 ./run.sh masks recipe.json photo.jpg
@@ -121,11 +130,36 @@ photo ─► inspect ─► diagnostics + grid ─► Claude suggests ─► you
 
 Working files for each photo are cached under `~/.cache/feedready/work/<photo>-<hash>/`.
 
+## Change the skill
+
+The repo at `~/sideones/feedready` is the source. Claude Code runs the installed copy, so edits reach it only through a version bump:
+
+1. Edit and test in the repo.
+2. Bump `version` in `.claude-plugin/plugin.json` and commit.
+3. Pull the new version into Claude Code:
+
+   ```bash
+   claude plugin marketplace update feedready && claude plugin update feedready@feedready
+   ```
+
+4. If you changed `swift/feedready_engine.swift`, rerun `skills/feedready/setup.sh`. `doctor` reports a stale engine until you do.
+5. Run `/reload-plugins` in an open session, or start a new one.
+
+## Publish on GitHub
+
+Push the repo, then anyone (including you on another Mac) installs it with:
+
+```bash
+claude plugin marketplace add <github-user>/feedready && claude plugin install feedready@feedready
+```
+
+followed by `setup.sh` from the installed copy under `~/.claude/plugins/cache/feedready/`.
+
 ## Test
 
 ```bash
-cd ~/.claude/skills/feedready
-.venv/bin/python tests/selftest.py
+cd ~/sideones/feedready
+~/.cache/feedready/venv/bin/python tests/selftest.py
 ```
 
 This checks every slider's direction on both renderers, mask blending, crop geometry, the diagnostics, object masks and heal. It must end with `ALL PASSED`. Model checks print `skip` when the model isn't installed.
@@ -134,8 +168,8 @@ This checks every slider's direction on both renderers, mask blending, crop geom
 
 | Symptom | Fix |
 |---|---|
-| `doctor` lists `engine` as missing | Run `xcode-select --install`, then `./setup.sh` |
-| `needs SegFormer` or `object masks need … EdgeTAM` | Run `./setup.sh --segformer --models` |
+| `doctor` lists `engine` as missing or out of date | Run `xcode-select --install` if needed, then `skills/feedready/setup.sh` |
+| `needs SegFormer` or `object masks need … EdgeTAM` | Run `skills/feedready/setup.sh --segformer --models` |
 | A mask spills onto the wrong area | Check the `masks` contact sheet. Subtract `person` or `sky`, tighten the object box, or add `exclude` points. |
 | `notes` says an object mask is low-confidence | The box probably catches two things. Tighten it or add a positive point inside the object. |
 | HEIC fails on the phone | Send a JPEG; the claude.ai sandbox may lack HEIC support |

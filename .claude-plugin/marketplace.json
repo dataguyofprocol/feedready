@@ -8,8 +8,7 @@
     {
       "name": "feedready",
       "source": "./",
-      "description": "Suggest and apply Lightroom-style photo edits, including region and object edits, then hand back the final image.",
-      "version": "0.1.0"
+      "description": "Suggest and apply Lightroom-style photo edits, including region and object edits, then hand back the final image."
     }
   ]
 }
