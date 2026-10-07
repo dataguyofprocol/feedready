@@ -98,41 +98,57 @@ These work on any mask.
 - `"feather": 0.01`: extra blur.
 - `"strength": 0.5`: scales how strongly the step applies through this mask.
 
-## Worked example: 5 suggestions → recipe
+## Worked example: a direction refined by notes
 
-These were the suggestions:
-1. Crop to 4:5, trimming the empty sky, with the beanie about a third of the way down.
-2. Eyes +0.4 EV.
-3. Clarity and dehaze on the snowy peaks only.
-4. Tone down the reflective strip on the pants and the glove logo.
-5. Keep the cool grade, and don't push the sky to white.
-
-The recipe:
+This is the session shown in the README's "See it work". The user dropped direction C, so Claude blended B's dusk mood with A's subject lift as v3. Self-review caught the black pants turning muddy brown, so v4 fades the lift down the legs and holds the blacks. The face is covered (`face_readable: false`), so the eye light is a radial read from a zoomed grid, not `type: face`.
 
 ```json
 {
-  "preset": "instagram",
-  "crop": {"aspect": "4:5", "focus": [0.545, 0.335], "focus_at": [0.5, 0.33]},
+  "label": "Blue hour, lifted", "note": "B's dusk mood with you lifted out of the shadow",
+  "preset": "instagram", "vignette": -15,
+  "crop": {"aspect": "4:5", "focus": [0.563, 0.375], "focus_at": [0.5, 0.33]},
   "steps": [
-    {"name": "lift eyes +0.4",
-     "mask": {"type": "radial", "center": [0.555, 0.352], "radius": [0.07, 0.03], "falloff": 0.7},
-     "adjust": {"exposure": 0.4}},
-    {"name": "peaks: clarity + dehaze",
+    {"name": "remove the reflective strip", "why": "the white tick on your pants is the brightest thing below your chest",
+     "mask": {"type": "brush", "dots": [[0.405, 0.824, 0.012], [0.417, 0.818, 0.012], [0.429, 0.812, 0.012]], "grow": 0.004},
+     "adjust": {"heal": true}},
+    {"name": "bring back the sky", "why": "10% of the sky was pure white",
+     "mask": {"type": "sky"}, "adjust": {"highlights": -50, "whites": -15}},
+    {"name": "bite on the snow peaks", "why": "the peaks are the second subject; give them texture",
      "mask": {"op": "subtract", "masks": [
         {"op": "intersect", "masks": [
            {"type": "segment", "class": "mountain"},
            {"type": "linear", "start": [0.5, 0.42], "end": [0.5, 0.62]}]},
         {"type": "person", "grow": 0.01},
-        {"type": "segment", "class": "sky"}]},
+        {"type": "sky"}]},
      "adjust": {"clarity": 25, "dehaze": 15}},
-    {"name": "tame reflective bits",
+    {"name": "tone down the glove logo", "why": "small bright marks on the gloves pull the eye",
      "mask": {"op": "intersect", "masks": [
-        {"type": "brush", "dots": [[0.405, 0.824, 0.014], [0.417, 0.818, 0.014], [0.429, 0.812, 0.014],
-                                   [0.44, 0.675, 0.014], [0.495, 0.71, 0.014]]},
+        {"type": "brush", "dots": [[0.44, 0.675, 0.014], [0.495, 0.71, 0.014], [0.578, 0.692, 0.012]]},
         {"type": "luminance", "min": 0.3, "soft": 0.08}]},
-     "adjust": {"exposure": -0.8, "highlights": -50}}
+     "adjust": {"exposure": -0.8, "highlights": -50}},
+    {"name": "blue hour grade", "why": "cool teal dusk with deeper contrast", "look": "cinematic", "amount": 70},
+    {"name": "deepen the sky to dusk blue", "why": "turns the blown white into dusk and frames you from above",
+     "mask": {"type": "linear", "start": [0.5, 0.0], "end": [0.5, 0.42]},
+     "adjust": {"exposure": -0.45, "temp": -30, "tint": -6}},
+    {"name": "darken the valley", "why": "frames you from below and pushes the eye up to you and the peaks",
+     "mask": {"op": "subtract", "masks": [
+        {"type": "linear", "start": [0.5, 1.0], "end": [0.5, 0.62]},
+        {"type": "person", "grow": 0.01}]},
+     "adjust": {"exposure": -0.4, "highlights": -20}},
+    {"name": "lift you out of the shadow", "why": "shows the jacket; the lift fades down your legs so black pants stay black",
+     "mask": {"op": "intersect", "masks": [
+        {"type": "person", "grow": -0.002},
+        {"type": "linear", "start": [0.5, 0.62], "end": [0.5, 0.9]}]},
+     "adjust": {"exposure": 0.5, "shadows": 30, "blacks": -20}},
+    {"name": "light the eyes", "why": "the eyes are the only part of the face showing; make them land",
+     "mask": {"type": "radial", "center": [0.563, 0.354], "radius": [0.055, 0.026], "falloff": 0.7},
+     "adjust": {"exposure": 0.4, "shadows": 20}}
   ]
 }
 ```
 
-Item 5 needs no step. The global grade is left untouched, and `apply` reports `clipped_highlights_pct` so you can confirm the sky held. If it clips, add `{"mask": {"type": "sky"}, "adjust": {"highlights": -20}}`.
+Patterns worth copying:
+- Fixes that are right whatever the vibe come first: heal, recover the sky, texture on the scenery, tame distractions. Then one `look` step sets the grade, and region steps after it shape the light.
+- Gradients do the framing: a linear from the top darkens and cools the sky, and one from the bottom darkens the valley, with `person` subtracted so you aren't darkened.
+- Intersecting a mask with a `linear` fades a move across the subject instead of applying it evenly.
+- Each `name` and `why` is written for the user, because the edit cards show them.

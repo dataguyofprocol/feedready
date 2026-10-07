@@ -35,6 +35,48 @@ flowchart LR
 
 **Every version is saved**, so "back to v2" or "v2 but warmer" just works.
 
+## See it work
+
+This is one real session, start to finish, on a blue-hour trek photo headed for Instagram.
+
+**1. Claude reads the photo.** `inspect` measures it before anything is suggested:
+
+| Finding | What it means for the edit |
+|---|---|
+| Person in scene, outdoors | it's a travel portrait, not a landscape |
+| You're 3.9 stops darker than the sky | the jacket pattern is lost in shadow |
+| 10.5% of the sky is pure white | the top of the frame reads as blank paper |
+| 31% of the frame is empty above you | crop to 4:5 and trim the sky |
+| A bright logo on the glove | a small spot pulling the eye away from you |
+| Face covered, not readable as skin | face checks are skipped; Claude places the eye light from a zoomed grid |
+
+**2. Three directions, rendered.** All three share the same base fixes: the 4:5 crop, the sky recovered, texture on the snow peaks, the eyes lit, and the reflective bits tamed. Each then adds its own look. `board` checks that no two directions look alike.
+
+<p align="center"><img src="assets/demo/1-directions.jpg" alt="The original next to three rendered directions: A Clean, B Cinematic, C Mono editorial"></p>
+
+> **You:** what do you suggest? C is out
+>
+> **Claude:** B's dusk mood with A's lift on you. The blue, the snow and your black-and-white jacket carry this photo. A leaves the sky flat; B buries you in shadow.
+
+**3. A version, self-reviewed before you see it.** v3 lifted the whole body, and Claude's own review caught that the black pants went muddy brown. v4 fades the lift down the legs and holds the blacks. You only ever see v4.
+
+<p align="center"><img src="assets/demo/2-self-review.jpg" width="720" alt="v3 with muddy brown pants next to v4 with black pants"></p>
+
+**4. What each edit did, and where.** Each step is rendered on its own, zoomed to where it acts, and ranked by how much it actually changed the photo. The map numbers where every step lands.
+
+<table>
+  <tr>
+    <td width="60%"><img src="assets/demo/3-cards.jpg" alt="Edit cards: each step before and after, ranked by measured impact"></td>
+    <td width="40%" valign="top"><img src="assets/demo/4-map.jpg" alt="Edit map with numbered outlines of where each step applies"></td>
+  </tr>
+</table>
+
+On the Mac you also get `review.html`: drag a before/after split, click between v1…v4, and hold <kbd>B</kbd> to see the original.
+
+**5. Ship it.** `apply v4` renders the final at full resolution for the 4:5 crop (1333 × 1666), with no metadata.
+
+<p align="center"><img src="assets/demo/5-final.jpg" width="720" alt="Before and after: the original photo and the final v4"></p>
+
 ## Mac or phone
 
 | | Mac | Phone |
