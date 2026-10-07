@@ -5,15 +5,15 @@ description: Suggest the best Lightroom/Snapseed-style edits for a photo from me
 
 # feedready
 
-You plan the edits; `run.sh` renders them. On a Mac it uses Apple Core Image (adjustments) + Vision (person/subject/face masks) + a 4.4 MB SegFormer model (sky/mountain/water/tree masks). Elsewhere (claude.ai) a numpy fallback renders global edits, crops and geometric masks.
+You plan the edits; `run.sh` renders them. On a Mac it uses Apple Core Image (adjustments) + Vision (person/subject/face masks) + a 4.4 MB SegFormer model (sky/mountain/water/tree masks) + EdgeTAM (a mask for any object you box or click) + MI-GAN (object removal). Elsewhere (claude.ai) a numpy fallback renders global edits, crops and geometric masks.
 
 Command (Mac): `~/.claude/skills/feedready/run.sh <cmd>`. On claude.ai use `python3 <this skill dir>/scripts/feedready.py <cmd>`. Every command prints JSON.
 
 ## 0. Check the tier (first use in a session)
 Run `run.sh doctor`.
 - `tier: mac` with nothing in `missing`: full feature set.
-- `missing` lists something: **ask the user before running `setup.sh`**, and say what it downloads (Python packages ~90 MB from PyPI; `--segformer` adds the 4.4 MB scene model). Compiling the Swift engine downloads nothing. Never download a model or package without a yes.
-- `tier: basic` (claude.ai/phone): global sliders, crop/presets, and radial/linear/brush/polygon/luminance/color masks work. Masks of type person/subject/background/face/segment and the `heal` adjustment don't. For those, tell the user: "this one's best done on the Mac". Don't fake it with a poor approximation.
+- `missing` lists something: **ask the user before running `setup.sh`**, and say what it downloads (Python packages ~90 MB from PyPI; `--segformer` adds the 4.4 MB scene model; `--models` adds the 69 MB object mask and heal models). Compiling the Swift engine downloads nothing. Never download a model or package without a yes.
+- `tier: basic` (claude.ai/phone): global sliders, crop/presets, and radial/linear/brush/polygon/luminance/color masks work. Masks of type person/subject/background/face/segment/object and the `heal` adjustment don't. For those, tell the user: "this one's best done on the Mac". Don't fake it with a poor approximation.
 
 ## 1. Inspect
 `run.sh inspect PHOTO`, then **look at** the `original` and `grid` images it returns. The grid has yellow lines every 10% labelled .1–.9, with any detected face boxed in cyan. Read every coordinate you use from this grid. Don't estimate pixel positions by eye.
@@ -35,11 +35,18 @@ Then stop. The picked items become the recipe. A finding's `step` drops in as wr
 ## 3. Write the recipe and check the masks
 Write the recipe JSON to a file (schema and examples: `reference/recipe.md`). Run `run.sh masks RECIPE PHOTO` and **look at** the contact sheet, where each step's mask shows as red.
 
+People, faces, sky and broad scenery have their own types (`person`, `face`, `sky`, `segment`). For anything else the user names ("the snowy peaks", "the glove logo", "that car"), use `object` with a box read from the grid.
+- A tight box is the most reliable prompt.
+- If the box catches extras, add a positive point inside the target and `exclude` points on the look-alike neighbours.
+- `masks` and `apply` list low-confidence object masks in `notes`. Check those on the contact sheet first.
+- To remove a distraction, heal it through an `object` or `brush` mask with a small `grow` (0.004).
+
 Fix any mask that spills or misses, at most 2 rounds. Common fixes:
 - Subtract `person` from scenery masks.
 - Subtract `sky` from mountain masks.
 - Intersect with a `linear` band to limit the vertical extent.
 - Intersect with `luminance` to hit only bright or dark parts.
+- Intersect or subtract an `object` mask when a Vision or SegFormer region is wrong, e.g. intersect `segment` mountain with a box on the one peak the user meant.
 - Use an explicit `radial` from the grid when Vision's face points miss. Covered or profile faces often fool it.
 
 ## 4. Apply and check

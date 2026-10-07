@@ -46,7 +46,7 @@ A recipe is JSON: a file path or an inline string passed to `masks` / `apply`.
 | `sharpen` | 0…150 | luminance only |
 | `hsl` | `{"blue": {"hue": -10, "sat": -20, "lum": 10}, …}` | bands: red, orange, yellow, green, aqua, blue, purple, magenta; each value -100…100 |
 | `curve` | `[[0,0],[0.25,0.22],[0.75,0.8],[1,1]]` | point curve on sRGB values (smooth, monotone) |
-| `heal` | `true` | inpaints the step's mask (brush dots over small spots). Mac only. |
+| `heal` | `true` | removes whatever the step's mask covers and fills it from the surroundings (MI-GAN). Works for spots and whole objects, through any mask (brush, object). Add a small `grow` so the fill covers the edges. Mac only. |
 
 Typical amounts for a post: ±0.3–0.7 exposure on a region, ±20–40 on most sliders, and 10–25 for dehaze and clarity.
 
@@ -68,6 +68,7 @@ Typical amounts for a post: ±0.3–0.7 exposure on a region, ±20–40 on most 
 - `{"type": "face", "part": "face" | "eyes", "index": 0, "scale": 1.0}`: built from Vision face points. Check it on the contact sheet, because covered or profile faces mislead it.
 - `{"type": "segment", "class": "mountain"}`, or a list of classes: SegFormer ADE20K. Friendly names: sky, mountain(s), tree(s), vegetation, water, ground, building, rock. Any ADE20K label also works (e.g. grass, sea, sand, road, field, hill). Edges are snapped to the photo; set `"edge_refine": false` to skip that.
 - `{"type": "sky"}`: SegFormer sky when the model is available, otherwise a heuristic.
+- `{"type": "object", "box": [x0, y0, x1, y1], "points": [[x, y], …], "exclude": [[x, y], …]}`: the object the prompt points at (EdgeTAM), for anything without a dedicated type. Give a `box`, at least one `points` click, or both. `exclude` clicks push look-alike neighbours out. A tight box from the grid works best. `notes` in the `masks` and `apply` output flags a low-confidence result.
 
 **Combine**
 - `{"op": "union" | "intersect" | "subtract", "masks": [A, B, …]}`. For `subtract`, the first mask has all the others removed from it.
