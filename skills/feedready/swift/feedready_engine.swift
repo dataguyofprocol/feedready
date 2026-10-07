@@ -4,6 +4,7 @@ import Foundation
 import Vision
 
 let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+let p3 = CGColorSpace(name: CGColorSpace.displayP3)!
 let ctx = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!])
 
 func fail(_ msg: String) -> Never {
@@ -25,9 +26,9 @@ func loadMask(_ path: String) -> CIImage {
     return img
 }
 
-func writePNG16(_ img: CIImage, _ path: String) {
+func writePNG16(_ img: CIImage, _ path: String, _ space: CGColorSpace) {
     do {
-        try ctx.writePNGRepresentation(of: img, to: URL(fileURLWithPath: path), format: .RGBA16, colorSpace: srgb)
+        try ctx.writePNGRepresentation(of: img, to: URL(fileURLWithPath: path), format: .RGBA16, colorSpace: space)
     } catch { fail("write failed: \(path): \(error)") }
 }
 
@@ -43,7 +44,8 @@ func writeJSON(_ obj: Any, _ path: String) {
 }
 
 func decode(_ input: String, _ output: String) {
-    writePNG16(load(input), output)
+    let wide = CIImage(contentsOf: URL(fileURLWithPath: input))?.colorSpace?.isWideGamutRGB ?? false
+    writePNG16(load(input), output, wide ? p3 : srgb)
 }
 
 func scaled(_ mask: CIImage, to extent: CGRect) -> CIImage {
@@ -113,7 +115,7 @@ func loadFloats(_ path: String) -> Data {
     return data
 }
 
-func apply(_ op: [String: Any], to img: CIImage, base: URL) -> CIImage {
+func apply(_ op: [String: Any], to img: CIImage, base: URL, space: CGColorSpace) -> CIImage {
     let extent = img.extent
     switch op["op"] as? String {
     case "matrix":
@@ -140,14 +142,14 @@ func apply(_ op: [String: Any], to img: CIImage, base: URL) -> CIImage {
         f.inputImage = img
         f.curvesData = loadFloats(base.appendingPathComponent(op["lut"] as! String).path)
         f.curvesDomain = CIVector(x: 0, y: 1)
-        f.colorSpace = srgb
+        f.colorSpace = space
         return f.outputImage!
     case "cube":
         let f = CIFilter.colorCubeWithColorSpace()
         f.inputImage = img
         f.cubeDimension = Float(num(op, "dim"))
         f.cubeData = loadFloats(base.appendingPathComponent(op["lut"] as! String).path)
-        f.colorSpace = srgb
+        f.colorSpace = space
         return f.outputImage!
     case "vibrance":
         let f = CIFilter.vibrance()
@@ -176,12 +178,13 @@ func render(_ planPath: String) {
     guard let data = try? Data(contentsOf: planURL),
           let plan = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { fail("bad plan: \(planPath)") }
 
+    let space = plan["p3"] as? Bool == true ? p3 : srgb
     var img = load(base.appendingPathComponent(plan["input"] as! String).path)
     let extent = img.extent
 
     for step in plan["steps"] as? [[String: Any]] ?? [] {
         var adjusted = img
-        for op in step["ops"] as? [[String: Any]] ?? [] { adjusted = apply(op, to: adjusted, base: base) }
+        for op in step["ops"] as? [[String: Any]] ?? [] { adjusted = apply(op, to: adjusted, base: base, space: space) }
         if let maskName = step["mask"] as? String {
             let mask = loadMask(base.appendingPathComponent(maskName).path)
             let blend = CIFilter.blendWithMask()
@@ -223,9 +226,9 @@ func render(_ planPath: String) {
     let quality = num(plan, "quality", 0.95)
     do {
         if out.pathExtension.lowercased() == "png" {
-            try ctx.writePNGRepresentation(of: img, to: out, format: .RGBA16, colorSpace: srgb)
+            try ctx.writePNGRepresentation(of: img, to: out, format: .RGBA16, colorSpace: space)
         } else {
-            try ctx.writeJPEGRepresentation(of: img, to: out, colorSpace: srgb,
+            try ctx.writeJPEGRepresentation(of: img, to: out, colorSpace: space,
                 options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): quality])
         }
     } catch { fail("write failed: \(error)") }

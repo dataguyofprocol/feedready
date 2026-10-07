@@ -26,7 +26,7 @@ from detect import (
     run_engine,
     segformer_available,
 )
-from imaging import cv2, load_rgb, luma, save_jpeg, save_mask, save_png16, to_u8
+from imaging import cv2, icc_profile, is_p3, load_rgb, luma, save_jpeg, save_mask, save_png16, to_u8
 
 USAGE = """feedready: apply Claude's photo-edit recipe and export a post-ready image.
 
@@ -42,6 +42,7 @@ fallback renders the subset that needs no models.
 
 CLAUDE_OUTPUTS = Path("/mnt/user-data/outputs")
 LARGE_MEGAPIXELS = 30
+WORKING_COPY_VERSION = 2
 
 
 def tier() -> str:
@@ -59,6 +60,7 @@ def prepare(src: Path) -> tuple[Path, Path, np.ndarray]:
     with open(src, "rb") as f:
         h.update(f.read(1 << 20))
     h.update(str(src.stat().st_size).encode())
+    h.update(str(WORKING_COPY_VERSION).encode())
     work = CACHE / "work" / f"{src.stem}-{h.hexdigest()[:8]}"
     work.mkdir(parents=True, exist_ok=True)
     working = work / "working.png"
@@ -66,8 +68,14 @@ def prepare(src: Path) -> tuple[Path, Path, np.ndarray]:
         if tier() == "mac":
             run_engine("decode", str(src), str(working))
         else:
-            save_png16(load_rgb(src), working)
+            icc = icc_profile(src)
+            save_png16(load_rgb(src), working, icc if is_p3(icc) else None)
     return work, working, load_rgb(working)
+
+
+def wide_profile(working: Path) -> bytes | None:
+    icc = icc_profile(working)
+    return icc if is_p3(icc) else None
 
 
 def load_recipe(arg: str) -> dict:
@@ -92,7 +100,7 @@ def _thumb(img: np.ndarray, long_edge: int) -> Image.Image:
     return im
 
 
-def grid_image(img: np.ndarray, scene: Scene | None, path: Path) -> None:
+def grid_image(img: np.ndarray, scene: Scene | None, path: Path, icc: bytes | None = None) -> None:
     im = _thumb(img, 1400).convert("RGB")
     W, H = im.size
     draw = ImageDraw.Draw(im, "RGBA")
@@ -108,7 +116,7 @@ def grid_image(img: np.ndarray, scene: Scene | None, path: Path) -> None:
         for f in scene.faces():
             x0, y0, x1, y1 = f["box"]
             draw.rectangle([x0 * W, y0 * H, x1 * W, y1 * H], outline=(0, 255, 255, 255), width=2)
-    im.save(path, quality=90)
+    im.save(path, quality=90, icc_profile=icc)
 
 
 def stats(img: np.ndarray) -> dict:
@@ -156,6 +164,8 @@ def cmd_inspect(args) -> dict:
     scene = Scene(work, working, img)
     out = {"work_dir": str(work), "size": [img.shape[1], img.shape[0]], "tier": tier(), "stats": stats(img)}
     out.update(_resolution(img, src))
+    icc = wide_profile(working)
+    out["color_space"] = "display-p3" if icc else "srgb"
     if tier() == "mac":
         v = scene.vision()
         out["faces"] = [{k: f.get(k) for k in ("box", "left_pupil", "right_pupil", "confidence")} for f in v.get("faces", [])]
@@ -168,7 +178,7 @@ def cmd_inspect(args) -> dict:
         out["scene_classes"] = scene.segment_summary()
     out["diagnostics"] = diagnose.run(scene)
     grid = work / "grid.jpg"
-    grid_image(img, scene, grid)
+    grid_image(img, scene, grid, icc)
     out["grid"] = str(grid)
     out["original"] = str(working)
     return out
@@ -217,7 +227,7 @@ def cmd_masks(args) -> dict:
     for i, t in enumerate(tiles):
         sheet.paste(t, ((i % cols) * (tw + 6), (i // cols) * (th + 6)))
     path = work / "masks.jpg"
-    sheet.save(path, quality=88)
+    sheet.save(path, quality=88, icc_profile=wide_profile(working))
     coverage = [None if m is None else round(float(m.mean()), 3) for m in built]
     return {"contact_sheet": str(path), "mask_coverage": coverage, "notes": scene.notes}
 
@@ -272,12 +282,13 @@ def cmd_apply(args) -> dict:
     built = _step_masks(recipe, scene)
     H, W = img.shape[:2]
     long_edge = max(H, W)
+    icc = wide_profile(working)
 
     pre, changed = _prepass(img, recipe, built)
     input_png = working
     if changed:
         input_png = work / "prepass.png"
-        save_png16(pre, input_png)
+        save_png16(pre, input_png, icc)
 
     crop, resize = _output_geometry(recipe, W, H)
     vig = recipe.get("vignette", 0)
@@ -289,20 +300,21 @@ def cmd_apply(args) -> dict:
 
     steps_ops = [develop.build_ops(s["adjust"], long_edge) for s in recipe["steps"]]
     if tier() == "mac":
-        _render_ci(work, input_png, recipe, built, steps_ops, crop, resize, vignette, out)
+        _render_ci(work, input_png, recipe, built, steps_ops, crop, resize, vignette, out, icc is not None)
     else:
-        _render_np(pre, built, steps_ops, crop, resize, vignette, out, recipe.get("quality", 100))
+        _render_np(pre, built, steps_ops, crop, resize, vignette, out, recipe.get("quality", 100), icc)
 
     result = load_rgb(out)
     before = img if crop is None else img[crop[1]:crop[1] + crop[3], crop[0]:crop[0] + crop[2]]
     compare = out.with_name(out.stem + "-compare.jpg")
-    _compare(before, result, compare)
+    _compare(before, result, compare, icc)
     (work / "last_recipe.json").write_text(json.dumps(recipe, indent=2))
     return {
         "output": str(out),
         "compare": str(compare),
         "size": [result.shape[1], result.shape[0]],
         "file_mb": round(out.stat().st_size / 1e6, 1),
+        "color_space": "display-p3" if icc else "srgb",
         "renderer": "core-image" if tier() == "mac" else "numpy",
         "before": stats(before),
         "after": stats(result),
@@ -311,7 +323,7 @@ def cmd_apply(args) -> dict:
     }
 
 
-def _render_ci(work, input_png, recipe, built, steps_ops, crop, resize, vignette, out):
+def _render_ci(work, input_png, recipe, built, steps_ops, crop, resize, vignette, out, p3):
     (work / "masks").mkdir(exist_ok=True)
     (work / "luts").mkdir(exist_ok=True)
     plan_steps = []
@@ -344,13 +356,14 @@ def _render_ci(work, input_png, recipe, built, steps_ops, crop, resize, vignette
         "crop": list(crop) if crop else None,
         "resize": resize,
         "vignette": vignette,
+        "p3": p3,
     }
     plan_path = work / "plan.json"
     plan_path.write_text(json.dumps(plan, indent=2))
     run_engine("render", str(plan_path))
 
 
-def _render_np(img, built, steps_ops, crop, resize, vignette, out, quality):
+def _render_np(img, built, steps_ops, crop, resize, vignette, out, quality, icc):
     for m, ops in zip(built, steps_ops):
         adjusted = img
         for op in ops:
@@ -370,12 +383,12 @@ def _render_np(img, built, steps_ops, crop, resize, vignette, out, quality):
         fall = np.clip((d - (1 - vignette["falloff"])) / vignette["falloff"], 0, 1) ** 2
         img = img * (1 - vignette["intensity"] * 0.8 * fall)[..., None]
     if Path(out).suffix.lower() == ".png":
-        save_png16(img, out)
+        save_png16(img, out, icc)
     else:
-        save_jpeg(img, out, quality)
+        save_jpeg(img, out, quality, icc)
 
 
-def _compare(before, after, path, height=900):
+def _compare(before, after, path, icc=None, height=900):
     a, b = _thumb(before, 4000), _thumb(after, 4000)
     a = a.resize((int(a.width * height / a.height), height), Image.LANCZOS)
     b = b.resize((int(b.width * height / b.height), height), Image.LANCZOS)
@@ -386,7 +399,7 @@ def _compare(before, after, path, height=900):
     font = _font(26)
     for x, label in ((10, "before"), (a.width + 18, "after")):
         draw.text((x, 8), label, fill="white", font=font, stroke_width=3, stroke_fill="black")
-    sheet.save(path, quality=90)
+    sheet.save(path, quality=90, icc_profile=icc)
 
 
 def main():

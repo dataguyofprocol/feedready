@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import struct
+import zlib
+from io import BytesIO
+from pathlib import Path
+
 import numpy as np
 from PIL import Image, ImageOps
 
@@ -27,10 +32,8 @@ def load_rgb(path) -> np.ndarray:
     im = ImageOps.exif_transpose(Image.open(path))
     icc = im.info.get("icc_profile")
     im = im.convert("RGB")
-    if icc:
+    if icc and not is_p3(icc):
         try:
-            from io import BytesIO
-
             from PIL import ImageCms
 
             src = ImageCms.ImageCmsProfile(BytesIO(icc))
@@ -45,36 +48,55 @@ def _plain_png(path) -> bool:
         if im.getexif().get(0x0112, 1) != 1:
             return False
         icc = im.info.get("icc_profile")
-    if not icc:
-        return True
-    try:
-        from io import BytesIO
+    return not icc or "srgb" in _profile_name(icc) or is_p3(icc)
 
+
+def _profile_name(icc: bytes) -> str:
+    try:
         from PIL import ImageCms
 
-        return "srgb" in ImageCms.getProfileDescription(ImageCms.ImageCmsProfile(BytesIO(icc))).lower()
+        return ImageCms.getProfileDescription(ImageCms.ImageCmsProfile(BytesIO(icc))).lower()
     except Exception:
-        return False
+        return ""
+
+
+def icc_profile(path) -> bytes | None:
+    with Image.open(path) as im:
+        return im.info.get("icc_profile")
+
+
+def is_p3(icc: bytes | None) -> bool:
+    return bool(icc) and "display p3" in _profile_name(icc)
+
+
+def _embed_png_icc(path, icc: bytes) -> None:
+    data = Path(path).read_bytes()
+    body = b"ICC Profile\0\0" + zlib.compress(icc)
+    chunk = struct.pack(">I", len(body)) + b"iCCP" + body + struct.pack(">I", zlib.crc32(b"iCCP" + body))
+    ihdr_end = 8 + 8 + 13 + 4
+    Path(path).write_bytes(data[:ihdr_end] + chunk + data[ihdr_end:])
 
 
 def load_mask(path) -> np.ndarray:
     return np.asarray(Image.open(path).convert("L"), dtype=np.float32) / 255.0
 
 
-def save_png16(img: np.ndarray, path) -> None:
+def save_png16(img: np.ndarray, path, icc: bytes | None = None) -> None:
     data = (img.clip(0, 1) * 65535 + 0.5).astype(np.uint16)
     if cv2 is not None:
         cv2.imwrite(str(path), cv2.cvtColor(data, cv2.COLOR_RGB2BGR))
+        if icc:
+            _embed_png_icc(path, icc)
     else:
-        Image.fromarray((img.clip(0, 1) * 255 + 0.5).astype(np.uint8)).save(path)
+        Image.fromarray((img.clip(0, 1) * 255 + 0.5).astype(np.uint8)).save(path, icc_profile=icc)
 
 
 def save_mask(mask: np.ndarray, path) -> None:
     Image.fromarray((mask.clip(0, 1) * 255 + 0.5).astype(np.uint8), "L").save(path)
 
 
-def save_jpeg(img: np.ndarray, path, quality: int = 100) -> None:
-    Image.fromarray((img.clip(0, 1) * 255 + 0.5).astype(np.uint8)).save(path, quality=quality, subsampling=0)
+def save_jpeg(img: np.ndarray, path, quality: int = 100, icc: bytes | None = None) -> None:
+    Image.fromarray((img.clip(0, 1) * 255 + 0.5).astype(np.uint8)).save(path, quality=quality, subsampling=0, icc_profile=icc)
 
 
 def to_u8(img: np.ndarray) -> np.ndarray:

@@ -45,7 +45,7 @@ A recipe is JSON: a file path or an inline string passed to `masks` / `apply`.
 | `dehaze` | -100…100 | dark-channel dehaze, applied before the other sliders. Mask it to the scenery. |
 | `sharpen` | 0…150 | luminance only |
 | `hsl` | `{"blue": {"hue": -10, "sat": -20, "lum": 10}, …}` | bands: red, orange, yellow, green, aqua, blue, purple, magenta; each value -100…100 |
-| `curve` | `[[0,0],[0.25,0.22],[0.75,0.8],[1,1]]` | point curve on sRGB values (smooth, monotone) |
+| `curve` | `[[0,0],[0.25,0.22],[0.75,0.8],[1,1]]` | point curve on the photo's encoded values, sRGB or Display P3 (smooth, monotone) |
 | `heal` | `true` | removes whatever the step's mask covers and fills it from the surroundings (MI-GAN). Works for spots and whole objects, through any mask (brush, object). Add a small `grow` so the fill covers the edges. Mac only. |
 
 Typical amounts for a post: ±0.3–0.7 exposure on a region, ±20–40 on most sliders, and 10–25 for dehaze and clarity.

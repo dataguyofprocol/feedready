@@ -14,9 +14,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "feedrea
 import develop
 import masks
 from detect import Scene, edgetam_available, engine_available, migan_available
-from imaging import gaussian, load_rgb, luma, rgb_to_hsv, save_png16, srgb_to_linear
+from imaging import gaussian, icc_profile, is_p3, load_rgb, luma, rgb_to_hsv, save_png16, srgb_to_linear
 
 ROOT = Path(__file__).resolve().parents[1]
+P3_ICC = Path("/System/Library/ColorSync/Profiles/Display P3.icc")
 FAILS = []
 
 
@@ -109,6 +110,8 @@ def main():
         check("max_edge shrinks the long edge", small.shape[:2] == (200, 160), str(small.shape[:2]))
         big = _apply(renderer, {"max_edge": 5000, "steps": []}, src, tmp / f"big_{renderer}.png")
         check("max_edge never enlarges", big.shape[:2] == (400, 600), str(big.shape[:2]))
+        check("srgb photo exports untagged as p3", not is_p3(icc_profile(jpg)))
+        _p3_roundtrip(renderer, tmp, base)
 
         before = metrics(base)
         for slider, (value, ok) in EXPECT.items():
@@ -243,6 +246,22 @@ def _heal():
         check(f"heal ({name}) leaves the rest untouched", outside <= 1.5 / 255, f"max err {outside * 255:.2f}/255")
         detect.MIGAN = Path("/nonexistent")
     detect.MIGAN = saved
+
+
+def _p3_roundtrip(renderer, tmp, base):
+    if not P3_ICC.exists():
+        print("  skip display p3 (no system profile)")
+        return
+    img = base.copy()
+    img[150:230, 20:200] = (1.0, 0.0, 0.0)
+    img[150:230, 220:400] = (0.0, 1.0, 0.0)
+    src = tmp / "p3.png"
+    save_png16(img, src, P3_ICC.read_bytes())
+    out = tmp / f"p3_{renderer}.jpg"
+    res = _apply(renderer, {"preset": "original", "steps": []}, src, out)
+    check("p3 photo exports tagged display p3", is_p3(icc_profile(out)))
+    err = max(float(np.abs(res[190, 100] - (1, 0, 0)).max()), float(np.abs(res[190, 300] - (0, 1, 0)).max()))
+    check("p3 red and green survive outside srgb", err <= 4 / 255, f"max err {err * 255:.1f}/255")
 
 
 def _apply(renderer, recipe, src, out):

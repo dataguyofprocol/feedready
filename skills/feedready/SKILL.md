@@ -56,7 +56,7 @@ Run `run.sh apply RECIPE PHOTO`. Look at the returned `compare` image (before | 
 Re-tune and re-apply at most 2 times. Prefer subtle: these are Lightroom-scale sliders, and ±20–40 is usually plenty. Dehaze and clarity on a smooth sky bring out streaks, so mask them to the scenery.
 
 ## 5. Deliver
-`output` is the final JPEG: sRGB, quality 100 with full colour resolution (4:4:4), the crop's full pixel size unless the recipe set `max_edge`, no metadata (so no GPS). `file_mb` gives its size. If the user wants it lossless, pass `-o NAME.png` for a 16-bit PNG. On Mac it goes in `~/Pictures/feedready/`. On claude.ai it goes in `/mnt/user-data/outputs/`, where it shows as a download.
+`output` is the final JPEG: in Display P3 when the photo is wide-gamut (most iPhone shots), otherwise sRGB (`color_space` in the `inspect` and `apply` output says which), quality 100 with full colour resolution (4:4:4), the crop's full pixel size unless the recipe set `max_edge`, no metadata (so no GPS). `file_mb` gives its size. If the user wants it lossless, pass `-o NAME.png` for a 16-bit PNG. On Mac it goes in `~/Pictures/feedready/`. On claude.ai it goes in `/mnt/user-data/outputs/`, where it shows as a download.
 
 On the Mac, send it with SendUserFile, along with the compare image. Then give a 2–4 line recap of what changed, and offer one optional next tweak.
 

@@ -97,7 +97,8 @@ What comes back:
 | | |
 |---|---|
 | **Where** | `~/Pictures/feedready/`, next to a `-compare.jpg` before/after |
-| **Format** | sRGB JPEG, quality 100, full colour resolution |
+| **Format** | JPEG, quality 100, full colour resolution |
+| **Colour** | Display P3 for wide-gamut photos (most iPhone shots), so saturated colours aren't clipped to sRGB; sRGB otherwise |
 | **Size** | full resolution, crops only. Over 30 MP? Claude asks whether to shrink first. |
 | **Privacy** | metadata stripped, so **no GPS location** in your post |
 
