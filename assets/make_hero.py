@@ -401,11 +401,14 @@ def encode_webp(n, out, opts):
     subprocess.run(["img2webp", "-loop", "0"] + opts + ["-d", str(round(1000 / FPS))] + frames + ["-o", out], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-WEBP = ["-lossy", "-q", "85", "-m", "4", "-kmax", "4", "-sharp_yuv"]
+WEBP = ["-lossy", "-q", "75", "-m", "4", "-kmax", "3", "-sharp_yuv"]
 
 
 def main():
-    n = render()
+    encode(render())
+
+
+def encode(n):
     encode_webp(n, f"{ASSETS}/hero.webp", WEBP)
     pal = f"fps=12,scale={W}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=256:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle"
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", str(FPS), "-i", f"{FRAMES}/%04d.png", "-vf", pal, "-loop", "0", f"{ASSETS}/hero.gif"], check=True)
