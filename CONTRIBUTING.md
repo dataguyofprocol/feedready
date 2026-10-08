@@ -1,6 +1,6 @@
 # Working on feedready
 
-Issues and pull requests are welcome. For a bug, include the `doctor` report, the photo (or one like it), and what you asked for. Keep commits conventional and scoped (`feat(feedready): …`, `fix(feedready): …`), and run the self-test before pushing — it must end with `ALL PASSED`. Be decent to each other: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Anything security-sensitive goes through [SECURITY.md](SECURITY.md), not a public issue.
+Issues and pull requests are welcome. For a bug, include the `doctor` report, the photo (or one like it), and what you asked for. Keep commits conventional and scoped (`feat(feedready): …`, `fix(feedready): …`), and run the self-test before pushing — it must end with `ALL PASSED`.
 
 ## The engine CLI
 
