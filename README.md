@@ -12,6 +12,7 @@
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/macOS-14%2B-000000?logo=apple" alt="macOS 14+">
   <img src="https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white" alt="Python 3.14">
+  <img src="https://img.shields.io/badge/Licence-MIT-3DA639" alt="MIT licence">
 </p>
 
 <p align="center">
@@ -21,7 +22,15 @@
   </picture>
 </p>
 
-Claude edits your photo like a photographer you hired. It measures what's off, shows you three rendered directions, then edits in versions and checks each one before you see it. You give notes in plain words until it's right.
+Claude edits your photo like an experienced Lightroom editor you hired. It reads the photo before touching it, shows you three rendered directions, then edits in versions and checks each one before you see it. You give notes in plain words until it's right.
+
+feedready is early (v0.2.x) and hobby-paced: the edit loop is solid and covered by a self-test, but the recipe format may still change between minor versions.
+
+## It edits in parts, like a retoucher
+
+<p align="center"><img src="assets/sees.webp" width="880" alt="The demo photo split into the regions Claude found and edited separately: sky, snow peaks, you, eyes, glove logo, valley and a reflective strip, each with how it was found and what was done to it"></p>
+
+One slider moves the sky, your face and your jacket together, so Claude masks them apart. Apple Vision finds people, faces and eyes. SegFormer labels the sky, mountains, water, trees and about 150 other scene classes. EdgeTAM cuts out any object you point at, and brightness and colour ranges catch the rest. Masks combine the way you'd stack them in Lightroom: the snow peaks above are the mountain class, minus you, minus the sky. Each part then gets the edit it needs, and a distraction like the reflective strip gets healed out of the photo entirely.
 
 ## Talk to it like a photographer
 
@@ -31,21 +40,16 @@ Every version is saved, so nothing you liked is ever lost. Already know what you
 
 ## Every round shows its work
 
-<table>
-  <tr>
-    <td width="60%"><img src="assets/demo/3-cards.jpg" alt="Edit cards: each step before and after, ranked by measured impact"></td>
-    <td width="40%" valign="top"><img src="assets/demo/4-map.jpg" alt="Edit map with numbered outlines of where each step applies"></td>
-  </tr>
-</table>
+<p align="center"><img src="assets/work.webp" width="880" alt="The three edits that changed the demo photo most, each rendered alone as a before and after, with why it was made, its slider values and its measured impact"></p>
 
-Each edit is rendered on its own, zoomed to where it acts, and ranked by how much it changed the photo. The map shows where each one lands. On the Mac you also get a review page with a before/after slider across every version.
+Every round renders each edit on its own, zoomed to where it acts, and ranks them by how much they changed the photo, so an edit that changes nothing gets caught. On the Mac you also get a review page with a before/after slider across every version.
 
 ## Install
 
 You need an Apple Silicon Mac on macOS 14+, the Xcode Command Line Tools and `uv` or Python 3.14.
 
 ```bash
-git clone git@github.com:dataguyofprocol/feedready.git
+git clone https://github.com/dataguyofprocol/feedready.git
 claude plugin marketplace add ./feedready
 claude plugin install feedready@feedready
 ./feedready/skills/feedready/setup.sh --segformer --models
@@ -142,5 +146,9 @@ Agents with their own folder, such as `.agent/skills/` in a project, get the sam
 That's fine for your own posts. Check them before using feedready commercially.
 
 </details>
+
+## Licence
+
+The code is MIT — see [LICENSE](LICENSE). The models `setup.sh` downloads keep their own licences; check the table above before using them commercially.
 
 Want to drive the engine yourself, read the recipe format or change the skill? See [CONTRIBUTING.md](CONTRIBUTING.md).
