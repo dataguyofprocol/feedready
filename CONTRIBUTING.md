@@ -1,6 +1,6 @@
 # Working on feedready
 
-Issues and pull requests are welcome. For a bug, include the `doctor` report, the photo (or one like it), and what you asked for. Keep commits conventional and scoped (`feat(feedready): …`, `fix(feedready): …`), and run the self-test before pushing — it must end with `ALL PASSED`.
+Issues and pull requests are welcome. For a bug, include the `doctor` report, the photo (or one like it), and what you asked for. Keep commits conventional and scoped (`feat(feedready): …`, `fix(feedready): …`), and run the self-test before pushing. It must end with `ALL PASSED`.
 
 ## The engine CLI
 
