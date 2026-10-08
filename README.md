@@ -49,13 +49,13 @@ Every round renders each edit on its own, zoomed to where it acts, and ranks the
 You need an Apple Silicon Mac on macOS 14+, the Xcode Command Line Tools and `uv` or Python 3.14.
 
 ```bash
-git clone https://github.com/dataguyofprocol/feedready.git
-claude plugin marketplace add ./feedready
+claude plugin marketplace add dataguyofprocol/feedready
 claude plugin install feedready@feedready
-./feedready/skills/feedready/setup.sh --segformer --models
 ```
 
-Then attach a photo in any Claude Code session and say "make this insta ready". Finished photos land in `~/Pictures/feedready/`.
+Then attach a photo in any Claude Code session and say "make this insta ready". On first use Claude checks what's missing and asks before it runs setup, which builds the engine and downloads the models. Finished photos land in `~/Pictures/feedready/`.
+
+To update later, run `claude plugin marketplace update feedready && claude plugin update feedready@feedready`.
 
 <details>
 <summary><b>What setup installs</b> (about 400 MB, all in <code>~/.cache/feedready</code>)</summary>
@@ -70,7 +70,7 @@ Then attach a photo in any Claude Code session and say "make this insta ready". 
 
 Setup is safe to rerun. It ends with a `doctor` report; you're done when it says `"tier": "mac"` and `"missing": []`.
 
-To install from GitHub without cloning, run `claude plugin marketplace add dataguyofprocol/feedready`, then run `setup.sh` from the installed copy under `~/.claude/plugins/cache/feedready/`.
+To run setup yourself, or to work on feedready from a clone, see [CONTRIBUTING.md](CONTRIBUTING.md#working-from-a-clone).
 
 </details>
 
@@ -97,7 +97,7 @@ A lighter version runs as an uploaded skill in the claude.ai app. It renders wit
 <details>
 <summary><b>Set it up</b></summary>
 
-1. On the Mac, run `./feedready/build_zip.sh`. The bundle lands at `~/Desktop/feedready.zip`.
+1. On the Mac, clone this repo (`git clone https://github.com/dataguyofprocol/feedready.git`) and run `./feedready/build_zip.sh`. The bundle lands at `~/Desktop/feedready.zip`.
 2. In claude.ai, upload it under Settings → Capabilities → Skills.
 3. Attach a photo in any chat and ask for edits.
 
@@ -110,7 +110,7 @@ The zip is a snapshot, so rebuild and re-upload it whenever the skill changes.
 <details>
 <summary><b>Use it from Codex or another agent</b></summary>
 
-`skills/feedready/` is a standard [Agent Skill](https://agentskills.io). Any agent that reads that format can run it, as long as it can look at images and run shell commands. Build the runtime once (see [Install](#install)), then link the skill into the agent's skills folder:
+`skills/feedready/` is a standard [Agent Skill](https://agentskills.io). Any agent that reads that format can run it, as long as it can look at images and run shell commands. Clone this repo and build the runtime once with `./feedready/skills/feedready/setup.sh --segformer --models`, then link the skill into the agent's skills folder:
 
 ```bash
 mkdir -p ~/.agents/skills && ln -s "$PWD/feedready/skills/feedready" ~/.agents/skills/feedready
@@ -125,8 +125,8 @@ Agents with their own folder, such as `.agent/skills/` in a project, get the sam
 
 | Problem | Fix |
 |---|---|
-| `doctor` says `engine` is missing or out of date | `xcode-select --install` if needed, then rerun `skills/feedready/setup.sh` |
-| `needs SegFormer` or `object masks need … EdgeTAM` | `skills/feedready/setup.sh --segformer --models` |
+| `doctor` says `engine` is missing or out of date | `xcode-select --install` if needed, then ask Claude to rerun setup |
+| `needs SegFormer` or `object masks need … EdgeTAM` | Ask Claude to rerun setup with `--segformer --models` |
 | A mask spills onto the wrong area | Check the `masks` contact sheet. Subtract `person` or `sky`, tighten the object box, or add `exclude` points. |
 | `notes` calls an object mask low-confidence | The box is probably catching two things. Tighten it or add a point inside the object. |
 | HEIC fails on the phone | Send a JPEG. The claude.ai sandbox may not read HEIC. |

@@ -2,6 +2,19 @@
 
 Issues and pull requests are welcome. For a bug, include the `doctor` report, the photo (or one like it), and what you asked for. Keep commits conventional and scoped (`feat(feedready): …`, `fix(feedready): …`), and run the self-test before pushing. It must end with `ALL PASSED`.
 
+## Working from a clone
+
+Install the plugin from your clone instead of GitHub, so Claude Code runs your changes:
+
+```bash
+git clone https://github.com/dataguyofprocol/feedready.git
+claude plugin marketplace add ./feedready
+claude plugin install feedready@feedready
+./feedready/skills/feedready/setup.sh --segformer --models
+```
+
+Setup needs `uv`, or Python 3.14 on your `PATH` as `python3.14` or `python3`. It is safe to rerun, and it ends with a `doctor` report; you're done when it says `"tier": "mac"` and `"missing": []`.
+
 ## The engine CLI
 
 Claude runs these commands for you, but you can run them yourself to debug or script edits. Each one prints JSON.
