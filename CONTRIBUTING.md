@@ -1,5 +1,7 @@
 # Working on feedready
 
+Issues and pull requests are welcome. For a bug, include the `doctor` report, the photo (or one like it), and what you asked for. Keep commits conventional and scoped (`feat(feedready): …`, `fix(feedready): …`), and run the self-test before pushing — it must end with `ALL PASSED`. Be decent to each other: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Anything security-sensitive goes through [SECURITY.md](SECURITY.md), not a public issue.
+
 ## The engine CLI
 
 Claude runs these commands for you, but you can run them yourself to debug or script edits. Each one prints JSON.
@@ -109,15 +111,17 @@ Run it from the repo root. It covers every slider's direction on both renderers,
 
 ## README art
 
+Everything in the README is drawn from one real session, the trek photo in `~/.cache/feedready/work/1-012c6c15/`, so these scripts only run on the Mac that holds it.
+
 | File | Made by | Needs |
 |---|---|---|
 | `assets/hero.webp`, `assets/hero.gif` | `~/.cache/feedready/venv/bin/python assets/make_hero.py` | `ffmpeg`, `img2webp`, `rsvg-convert`, and the Geist and Instrument Serif fonts in `~/Library/Fonts` |
+| `assets/sees.webp`, `assets/work.webp` | `~/.cache/feedready/venv/bin/python assets/make_panels.py` | the Geist fonts |
 | `assets/art/talk.svg` | `uv run --no-project --with fonttools --with uharfbuzz python assets/make_talk.py` | the Geist fonts |
 | `assets/art/mascot.svg` | hand-written | |
-| `assets/demo/3-cards.jpg`, `4-map.jpg` | exported from the demo session | |
 
-`make_hero.py` draws at 4× and writes a 1760 × 1040, 24 fps WebP (what GitHub shows, about 7 MB, with a keyframe every 4 frames so lossy blending leaves no ghosts), an 880 px, 12 fps GIF fallback, and an MP4 at `~/.cache/feedready/hero/hero.mp4`. It reads the demo session's saved versions from `~/.cache/feedready/work/1-012c6c15/`, so it only runs on the Mac that holds that session.
+`make_hero.py` draws at 4× and writes a 1760 × 1040, 24 fps WebP (what GitHub shows), an 880 px, 12 fps GIF fallback, and an MP4 at `~/.cache/feedready/hero/hero.mp4`. Each scene's animation is stretched and then held so the text can be read; `SCENES` sets the base length, stretch and hold per scene. The WebP is lossy with a keyframe every 3 frames, which keeps it under 8 MB without leaving faint ghosts of earlier frames.
+
+`make_panels.py` builds both panels at 2×. `sees.webp` rebuilds every region mask with `masks.build` from the v4 recipe and tints it on the photo, in the same colours `review.py` gives each step. `work.webp` redraws the top three v4 edit cards with type that stays readable at README width: the before/after crops come from `versions/v4-cards.jpg`, the names, reasons and slider values from `v4.json`, and the impact levels from the cards. If you change how `masks`, `cards` or the step colours work, rerun it, and rerun `make_hero.py` if `board` changes.
 
 `make_talk.py` turns the chat cards' text into Geist outlines, so they render the same on every platform. The cards switch to a dark palette under `prefers-color-scheme: dark`.
-
-The demo stills are the top three v4 edit cards (cropped from `versions/v4-cards.jpg`) and the v4 edit map, at the engine's native resolution. If you change how `cards` or `edit_map` draw, re-export them, and rerun `make_hero.py` if `board` changes.
