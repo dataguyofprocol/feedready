@@ -171,4 +171,3 @@ Fix any mask that spills or misses, at most 2 rounds per mask. Common fixes:
 - Coordinates are fractions of the original photo, before the crop. The crop is applied last.
 - Presets only set the crop aspect; they never resize.
 - Inputs: JPEG, PNG, HEIC (iPhone), TIFF, WebP. HEIC on claude.ai needs pillow-heif; otherwise ask for a JPEG.
-- The source repo is `~/sideones/feedready`. Edit and test there (`~/.cache/feedready/venv/bin/python tests/selftest.py`), never in the installed plugin copy.
