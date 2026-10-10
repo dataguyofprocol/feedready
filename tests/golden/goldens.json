@@ -1,0 +1,179 @@
+{
+  "card-mono": {
+    "fixture": "card",
+    "recipe": {
+      "steps": [
+        {
+          "look": "mono"
+        }
+      ]
+    },
+    "shape": [
+      400,
+      600,
+      3
+    ]
+  },
+  "card-moody": {
+    "fixture": "card",
+    "recipe": {
+      "steps": [
+        {
+          "look": "moody"
+        }
+      ]
+    },
+    "shape": [
+      400,
+      600,
+      3
+    ]
+  },
+  "card-natural": {
+    "fixture": "card",
+    "recipe": {
+      "steps": [
+        {
+          "look": "natural"
+        }
+      ]
+    },
+    "shape": [
+      400,
+      600,
+      3
+    ]
+  },
+  "card-regions": {
+    "fixture": "card",
+    "recipe": {
+      "preset": "instagram",
+      "steps": [
+        {
+          "amount": 80,
+          "look": "cinematic",
+          "name": "grade"
+        },
+        {
+          "adjust": {
+            "exposure": 0.4,
+            "shadows": 20
+          },
+          "mask": {
+            "end": [
+              0.5,
+              0.5
+            ],
+            "start": [
+              0,
+              0.5
+            ],
+            "type": "linear"
+          },
+          "name": "lift left"
+        },
+        {
+          "adjust": {
+            "saturation": -30
+          },
+          "mask": {
+            "hue": 240,
+            "range": 25,
+            "type": "color"
+          },
+          "name": "calm blue"
+        }
+      ]
+    },
+    "shape": [
+      400,
+      320,
+      3
+    ]
+  },
+  "card-warm-golden-70": {
+    "fixture": "card",
+    "recipe": {
+      "steps": [
+        {
+          "amount": 70,
+          "look": "warm-golden"
+        }
+      ],
+      "vignette": -15
+    },
+    "shape": [
+      400,
+      600,
+      3
+    ]
+  },
+  "checker-grade": {
+    "fixture": "checker",
+    "recipe": {
+      "steps": [
+        {
+          "amount": 90,
+          "look": "film",
+          "name": "film"
+        },
+        {
+          "adjust": {
+            "hsl": {
+              "blue": {
+                "hue": -10
+              },
+              "red": {
+                "sat": -15
+              }
+            },
+            "temp": -20,
+            "tint": 10
+          },
+          "name": "cool"
+        }
+      ]
+    },
+    "shape": [
+      400,
+      720,
+      3
+    ]
+  },
+  "checker-vibrance": {
+    "fixture": "checker",
+    "recipe": {
+      "steps": [
+        {
+          "adjust": {
+            "shadows": 25,
+            "vibrance": 50
+          },
+          "name": "pop"
+        }
+      ]
+    },
+    "shape": [
+      400,
+      720,
+      3
+    ]
+  },
+  "hazy-dehaze": {
+    "fixture": "hazy_card",
+    "recipe": {
+      "steps": [
+        {
+          "adjust": {
+            "dehaze": 60
+          }
+        }
+      ]
+    },
+    "shape": [
+      400,
+      600,
+      3
+    ]
+  }
+}

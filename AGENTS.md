@@ -6,7 +6,7 @@ Repo is a Claude Code plugin (`feedready`) that is also its own plugin marketpla
 
 ```bash
 # Test — the only verification step; no CI, lint, or typecheck exists
-~/.cache/feedready/venv/bin/python tests/selftest.py   # must end with "ALL PASSED"
+~/.cache/feedready/venv/bin/python tests/selftest.py   # must end with "ALL PASSED"; --suite NAME, --regen (rebaseline goldens/fingerprints), --fetch-corpus (downloads the labeled corpus)
 
 # Engine CLI (prints JSON); run from skills/feedready/
 ./run.sh doctor | inspect <photo> | masks <recipe> <photo> | board <photo> <recipe>... | preview <recipe> <photo> --note "..." | apply <recipe|vN> <photo>
@@ -19,7 +19,7 @@ skills/feedready/setup.sh --segformer --models
 ```
 
 - The venv lives at `~/.cache/feedready/venv` (Python 3.14, created by `setup.sh`); if missing, `run.sh` falls back to `python3`.
-- Selftest skips model-dependent checks (EdgeTAM, MI-GAN) with `skip` when models aren't installed — `ALL PASSED` with skips is not full coverage.
+- Selftest skips model-dependent checks (EdgeTAM, MI-GAN) with `skip` when models aren't installed — `ALL PASSED` with skips is not full coverage. The corpus suites (`suggest`, `eval`) skip the same way without the corpus or Mac tier; `tests/labels.json` pins per-photo diagnosis expectations, so after changing `diagnose.py` on purpose, read the new findings against each photo before updating labels.
 
 ## Editing workflow (the part that's easy to get wrong)
 

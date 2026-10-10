@@ -1,0 +1,113 @@
+{
+  "commons/backlit.jpg": {
+    "condition": "person silhouetted against a bright sandstorm sky",
+    "genre": "landscape",
+    "faces": 0,
+    "requires": ["color_cast", "crop", "exposure", "sky", "subject_balance"],
+    "signs": {"subject_balance": {"exposure": 1}, "sky": {"highlights": -1}, "exposure": {"highlights": -1}}
+  },
+  "commons/colour-cast.jpg": {
+    "condition": "warm tungsten pub interior; almost no neutral greys, so the cast check cannot measure it",
+    "genre": "still life / interior",
+    "faces": 0,
+    "requires": ["crop", "distractions", "exposure"],
+    "signs": {"exposure": {"exposure": 1}}
+  },
+  "commons/food.jpg": {
+    "condition": "well-lit breakfast plate; a good photo should get neither exposure nor cast findings",
+    "genre": "still life / interior",
+    "faces": 0,
+    "requires": ["crop"],
+    "forbids": ["exposure", "color_cast"]
+  },
+  "commons/group.jpg": {
+    "condition": "five friends indoors, uneven light on faces",
+    "genre": "group",
+    "faces": 5,
+    "requires": ["color_cast", "crop", "haze", "separation"],
+    "signs": {"separation": {"exposure": -1}}
+  },
+  "commons/low-light.jpg": {
+    "condition": "dim pub interior with three faces",
+    "genre": "group",
+    "faces": 3,
+    "requires": ["crop", "distractions", "exposure"],
+    "signs": {"exposure": {"exposure": 1}}
+  },
+  "commons/mountains.jpg": {
+    "condition": "clean mountain landscape with haze in the valleys",
+    "genre": "landscape",
+    "faces": 0,
+    "requires": ["crop", "exposure", "haze"]
+  },
+  "commons/night-city.jpg": {
+    "condition": "city at night, lights close to clipping, cool cast",
+    "genre": "city",
+    "faces": 0,
+    "requires": ["color_cast", "crop", "exposure"],
+    "signs": {"exposure": {"highlights": -1}, "color_cast": {"temp": -1}}
+  },
+  "commons/person-mountains.jpg": {
+    "condition": "hiker on a ridge, bright sky behind",
+    "genre": "landscape",
+    "faces": 0,
+    "requires": ["color_cast", "crop", "haze", "sky"]
+  },
+  "commons/portrait-dark.jpg": {
+    "condition": "moody low-key portrait, face lit against a dark background",
+    "genre": "portrait",
+    "faces": 1,
+    "requires": ["color_cast", "crop", "distractions", "exposure", "haze", "subject_balance"],
+    "signs": {"subject_balance": {"exposure": 1}, "color_cast": {"temp": -1}, "exposure": {"highlights": -1}}
+  },
+  "commons/portrait-light.jpg": {
+    "condition": "bright high-key portrait",
+    "genre": "portrait",
+    "faces": 1,
+    "requires": ["color_cast", "crop", "distractions", "exposure", "haze"],
+    "signs": {"color_cast": {"temp": -1}, "exposure": {"highlights": -1}}
+  },
+  "commons/selfie.jpg": {
+    "condition": "mirror selfie in decent light; should stay clean of exposure and cast findings",
+    "genre": "portrait",
+    "faces": 1,
+    "requires": ["crop", "distractions"],
+    "forbids": ["exposure", "color_cast"]
+  },
+  "commons/sunset.jpg": {
+    "condition": "sunset over the Mekong, bright sky, hazy distance",
+    "genre": "landscape",
+    "faces": 0,
+    "requires": ["crop", "distractions", "exposure", "haze", "sky"],
+    "signs": {"sky": {"highlights": -1}, "exposure": {"highlights": -1}}
+  },
+  "private/portrait.png": {
+    "condition": "home portrait session, warm room, bright background drawing the eye",
+    "genre": "portrait",
+    "faces": 1,
+    "requires": ["color_cast", "crop", "separation"],
+    "signs": {"separation": {"exposure": -1}, "color_cast": {"temp": -1}}
+  },
+  "private/trek.png": {
+    "condition": "the README trek photo: person in shadow, blown sky, reflective strip",
+    "genre": "person in scene",
+    "faces": 1,
+    "requires": ["color_cast", "crop", "distractions", "exposure", "sky", "subject_balance"],
+    "signs": {"subject_balance": {"exposure": 1}, "sky": {"highlights": -1}, "exposure": {"highlights": -1}}
+  },
+  "kodak": {
+    "condition": "24 well-exposed reference images",
+    "forbid_findings": ["underexposed overall"],
+    "cast_band": {"temp": 25, "tint": 40},
+    "genres": {
+      "kodim01.png": "city", "kodim02.png": "still life / interior", "kodim03.png": "still life / interior",
+      "kodim04.png": "portrait", "kodim05.png": "still life / interior", "kodim06.png": "landscape",
+      "kodim07.png": "city", "kodim08.png": "city", "kodim09.png": "landscape",
+      "kodim10.png": "still life / interior", "kodim11.png": "landscape", "kodim12.png": "person in scene",
+      "kodim13.png": "landscape", "kodim14.png": "person in scene", "kodim15.png": "portrait",
+      "kodim16.png": "landscape", "kodim17.png": "portrait", "kodim18.png": "portrait",
+      "kodim19.png": "landscape", "kodim20.png": "landscape", "kodim21.png": "landscape",
+      "kodim22.png": "landscape", "kodim23.png": "person in scene", "kodim24.png": "city"
+    }
+  }
+}

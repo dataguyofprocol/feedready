@@ -117,10 +117,25 @@ Claude Code runs an installed copy of the plugin, not this repo, so a change onl
 ~/.cache/feedready/venv/bin/python tests/selftest.py
 ```
 
-Run it from the repo root. It covers every slider's direction on both renderers, mask blending, crop geometry, the diagnostics, object masks and heal, and must end with `ALL PASSED`.
+Run it from the repo root; it must end with `ALL PASSED`. The suites run in order, fast to slow:
+
+| Suite | Covers |
+|---|---|
+| `units` | exact values for the looks/slider/preset tables, colour math, tone curves, white balance, hsl, crop geometry, mask geometry, imaging roundtrips and cv2-vs-fallback branch parity |
+| `docs` | `reference/recipe.md`, `reference/vibes.md` and `SKILL.md` stay in sync with the code, and the Swift engine handles every op `build_ops` emits |
+| `render` | every slider's direction on both renderers, the CLI loop, diagnostics, object masks, heal, `doctor`/`masks`, and the error paths |
+| `engine` | Core Image vs numpy parity per op, engine determinism, and the render-plan schema |
+| `golden` | pixel goldens for the numpy tier on synthetic fixtures, stored in `tests/golden/` |
+| `corpus` | every corpus photo survives a numpy-tier render |
+| `suggest` | the diagnosis pipeline on the labeled corpus (`tests/labels.json`): required and forbidden findings, step directions, genres, face counts |
+| `eval` | a render-quality scorecard (critique verdict, stats, perceptual hashes) with fingerprints and a drift history in `~/.cache/feedready/eval/` |
+
+Flags: `--suite NAME` runs one suite, `--regen` rebaselines the goldens and eval fingerprints, `--fetch-corpus` downloads the corpus (24 Kodak references plus 12 CC-licensed photos, ~25 MB, licences in `corpus/commons/CREDITS.txt`) into `~/.cache/feedready/corpus/`. The two private photos exist only on the original machine; `suggest` and `eval` cover the rest elsewhere.
+
+Rebaseline deliberately. `--regen` after an intentional change to looks, sliders, crops or mask math; expect engine-parity and `suggest` to need rechecking after a macOS upgrade changes Vision or Core Image. `tests/labels.json` is hand-reviewed per photo — when a check changes on purpose, read its new findings against the photo before updating the label.
 
 > [!TIP]
-> Model checks print `skip` when that model isn't installed, so a pass with skips doesn't cover everything.
+> Model checks print `skip` when that model isn't installed, so a pass with skips doesn't cover everything. `suggest` needs the Mac tier (Vision + SegFormer); `golden` and `eval` fingerprints assume the cv2 branches.
 
 ## README art
 
