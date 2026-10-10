@@ -59,6 +59,11 @@ def run_engine(*args: str) -> str:
     return res.stdout
 
 
+def _face_order(face: dict) -> tuple:
+    x0, y0, x1, y1 = face["box"]
+    return (-round((x1 - x0) * (y1 - y0), 6), round(x0, 6), round(y0, 6))
+
+
 class Scene:
     def __init__(self, work: Path, working_png: Path, img: np.ndarray):
         self.work = work
@@ -76,6 +81,7 @@ class Scene:
                 out.mkdir(exist_ok=True)
                 run_engine("vision", str(self.working_png), str(out))
             self._vision = json.loads((out / "vision.json").read_text())
+            self._vision["faces"] = sorted(self._vision.get("faces", []), key=_face_order)
         return self._vision
 
     def vision_mask(self, name: str) -> np.ndarray:
