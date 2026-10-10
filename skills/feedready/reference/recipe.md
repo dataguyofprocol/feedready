@@ -73,7 +73,7 @@ Typical amounts for a post: ±0.3–0.7 exposure on a region, ±20–40 on most 
 Computed on the original photo.
 
 - `{"type": "luminance", "min": 0.6, "max": 1, "soft": 0.08}`
-- `{"type": "color", "hue": 210, "range": 25, "soft": 15, "min_sat": 0.08}`: hue in degrees (red 0, orange 30, yellow 60, green 120, aqua 180, blue 240, magenta 300).
+- `{"type": "color", "hue": 210, "range": 25, "soft": 15, "min_sat": 0.08}`: hue in degrees (red 0, orange 30, yellow 60, green 120, aqua 180, blue 240, purple 280, magenta 320).
 
 ### Detected (Mac only)
 
