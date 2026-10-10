@@ -298,6 +298,12 @@ def doctor_and_masks(tmp, src):
                   feedready.cmd_masks(args) == {"error": "recipe has no steps"})
 
 
+def next_version(src):
+    import feedready
+
+    return f"v{max(feedready.version_numbers(lib.work_dir_for(src)), default=0) + 1}"
+
+
 def error_paths(src):
     import feedready
 
@@ -324,8 +330,8 @@ def error_paths(src):
     e = apply_error({"steps": [{"mask": {"type": "torus"}, "adjust": {"exposure": 1}}]})
     lib.check("unknown mask type fails with tiered json",
               "unknown mask type" in e.get("error", "") and e.get("tier") == "basic", str(e))
-    e = apply_error("v99")
-    lib.check("unknown version fails with json", "no version v99" in e.get("error", ""), str(e))
+    e = apply_error(next_version(src))
+    lib.check("unknown version fails with json", f"no version {next_version(src)}" in e.get("error", ""), str(e))
     bad = lib.tmp() / "bad.json"
     bad.write_text("{oops")
     e = lib.cli_error("apply", str(bad), str(src))
