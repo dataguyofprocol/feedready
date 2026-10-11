@@ -61,6 +61,25 @@ LOOKS_SNAPSHOT = {
         "curve": [[0, 0.04], [0.3, 0.26], [0.7, 0.74], [1, 0.97]],
     },
     "punchy": {"contrast": 25, "whites": 15, "blacks": -18, "clarity": 18, "texture": 10, "vibrance": 28},
+    "rim-backlit": {
+        "exposure": -0.1, "contrast": 16, "highlights": -20, "shadows": -12, "blacks": -12, "whites": 8,
+        "temp": 10, "vibrance": 14,
+        "hsl": {"orange": {"sat": 12, "lum": 6}, "yellow": {"sat": 10}, "blue": {"sat": -18, "lum": -12},
+                "aqua": {"sat": -12}},
+        "curve": [[0, 0.02], [0.3, 0.25], [0.7, 0.73], [1, 0.97]],
+    },
+    "neon-night": {
+        "exposure": -0.15, "contrast": 20, "highlights": -18, "shadows": 12, "blacks": -8, "temp": -8,
+        "vibrance": 18, "saturation": -6,
+        "hsl": {"orange": {"sat": 14, "lum": 4}, "magenta": {"sat": 18}, "purple": {"sat": 12},
+                "blue": {"hue": -12, "sat": 14, "lum": -8}, "aqua": {"hue": 10, "sat": 10}},
+        "curve": [[0, 0.03], [0.25, 0.2], [0.75, 0.78], [1, 0.96]],
+    },
+    "overcast-soft": {
+        "contrast": -8, "highlights": -12, "shadows": 18, "blacks": 6, "whites": 10, "temp": 4, "vibrance": 16,
+        "hsl": {"green": {"sat": -14, "lum": 8}, "blue": {"sat": -8, "lum": 8}, "orange": {"sat": 8, "lum": 6}},
+        "curve": [[0, 0.04], [0.5, 0.52], [1, 0.99]],
+    },
     "mono": {
         "saturation": -100, "contrast": 22, "whites": 12, "blacks": -15, "clarity": 12,
         "hsl": {"orange": {"lum": 15}, "red": {"lum": 8}, "blue": {"lum": -25}, "aqua": {"lum": -15}, "green": {"lum": -10}},

@@ -15,11 +15,27 @@ A look is a starting grade. Put it in its own step: `{"name": "warm grade", "loo
 | `film` | faded blacks, soft highlights, shifted greens, slight warmth | lifestyle, travel, casual portraits | can look muddy on low-contrast photos |
 | `cinematic` | teal-shifted blues and greens, punchy oranges, contrast | city, night, landscapes with sky, travel | unnatural skin when the background is mostly orange |
 | `punchy` | strong contrast, clarity, vibrance | landscapes, architecture, sport | HDR crunch on faces; mask clarity off skin |
+| `rim-backlit` | warm rim light, cooled shadows, contrast that holds the glow | sun behind the subject, sandstorm and snow backlights, dusk silhouettes | orange skin on close portraits; don't lift the subject unless the face is the story |
+| `neon-night` | teal-and-magenta night, restricted hues, lights held | night city, neon, blue hour with warm windows | muddy midtones when the night has no colour pairs; check the measured pair first |
+| `overcast-soft` | soft contrast, clean pastels, a gentle warm/cool split | overcast days, flat light, soft interiors, food | too gentle for dramatic light; don't add the contrast back globally |
 | `mono` | black and white with skin kept bright and skies darkened | strong light and shadow, texture, emotion | flat when the photo relies on colour |
+
+## Reading the light
+
+`profile.light` and the `light` opportunity pick the direction family before genre does; the genre table below settles the details. One direction is always the clean, faithful one, and one runs bold: the look at 130–160 amount (or the moves at 1.5×) fitted to the measured light. Critique's clipping, skin and halo checks are the net — if the bold tile breaks one, ease it back, don't abandon it.
+
+| measured light | second direction | bold direction |
+|---|---|---|
+| hard, top or backlit — silhouette potential | `rim-backlit` 60–80 | full commitment: `rim-backlit` 130, background graded, the figure allowed to go dark |
+| hard, side — shape-giving shadow | `punchy` with clarity masked off people, blacks held | `punchy` 140–160 on the scenery only |
+| soft, even | `overcast-soft`, or `bright-airy` for people and food | the measured colour pair pushed apart: one hue family up, the other down |
+| warm split — golden-hour signature | `warm-golden` 60–80 | `rim-backlit` 120 with a sky gradient |
+| night with colour pairs | `cinematic` | `neon-night` 110–140, fitted to the measured hues |
+| balanced | the genre table below | the genre table's third at 130 |
 
 ## Directions by genre
 
-Use the `profile.genre` from `inspect`, then trust your eye over it. Offer three directions that differ in a way someone notices at thumbnail size. `board` reports `too_similar` when two tiles are close; push those apart or replace one. One direction is always the faithful "clean" version: fixes only, `natural` look.
+Use the `profile.genre` from `inspect`, then trust your eye over it. Offer three directions that differ in a way someone notices at thumbnail size. `board` reports `too_similar` when two tiles are close; push those apart or replace one. One direction is always the faithful "clean" version: fixes only, `natural` look. One runs bold, fitted to the measured light (see Reading the light).
 
 | genre | clean | second | third | region moves that make it work |
 |---|---|---|---|---|
@@ -35,6 +51,20 @@ Write each direction as a full recipe with `label` ("A · Clean") and `note` (on
 ## The other photo in the frame
 
 `inspect` also returns `recrops`: up to three measured alternative framings — a square on the face, a 9:16 vertical, a tighter cut on the busiest region — each with a ready `crop` box and the evidence for why it works (eye weight kept, face height share, thirds placement). When one clearly beats the frame you have, offer it as a direction of its own, labelled as what it is ("D · The portrait inside"), with the base fixes and a look that suits it. Don't force one onto every photo: when no recrop keeps enough of the eye weight, the frame was right.
+
+## The moves that make it pop
+
+Region work is where the wow lives; global looks only set the stage. Each move is a recipe fragment — mask it, keep the amounts Lightroom-scale, name the step for the user. Every opportunity in `inspect` names the move that earns it.
+
+- **Seal the eye path** (hero owns the eye): `vignette -12 to -18`, or a `linear` burn from the busiest edge with the person subtracted.
+- **Choose the story** (a rival out-pulls the hero): dim and desaturate the rival through a mask on it (`exposure -0.3, saturation -20`), or crop to it with a recrop and make it the photo.
+- **Colour separation** (a complementary pair): push the subject's hue family up and the other down with `hsl` — saturate the hero's band, mute the background's. Never global vibrance alone.
+- **One accent** (a lone accent in a quiet frame): mute the whole frame `saturation -8`, then let the accent's band carry the colour.
+- **Lean into the light** (separation potential): subject brighter — dim the background 0.2–0.4 EV more through `person` inverted; silhouette — grade the bright background and never lift the figure halfway.
+- **Regional grade**: a look through a mask — `{"look": "warm-golden", "mask": {"type": "segment", "class": "mountain"}}` — the summit-only golden grade. When one region deserves a different grade than the frame, give it one.
+- **Frame with gradients**: a `linear` from the top cools and darkens a bright sky; one from the bottom, person subtracted, grounds the photo. Both push the eye to the middle.
+
+Keep the recipe honest: every step does something (`impact` not `none`), and no step fights the light the photo actually has.
 
 ## Notes → moves
 

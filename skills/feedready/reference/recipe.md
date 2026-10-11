@@ -36,7 +36,7 @@ A recipe is JSON. Pass `masks`, `board`, `preview` or `apply` a file path, an in
 
 ## Looks
 
-`"look": "<name>"` on a step expands into a full grade, and `"amount"` (0–200, default 100) scales it the way Lightroom's preset Amount does. Any `adjust` keys in the same step override the look's values, and `hsl` merges band by band. Looks: `natural`, `bright-airy`, `warm-golden`, `moody`, `film`, `cinematic`, `punchy`, `mono`. What each does and when to use it is in `vibes.md`.
+`"look": "<name>"` on a step expands into a full grade, and `"amount"` (0–200, default 100) scales it the way Lightroom's preset Amount does. Any `adjust` keys in the same step override the look's values, and `hsl` merges band by band. Looks: `natural`, `bright-airy`, `warm-golden`, `moody`, `film`, `cinematic`, `punchy`, `rim-backlit`, `neon-night`, `overcast-soft`, `mono`. What each does and when to use it is in `vibes.md`.
 
 ## Adjustments (Lightroom JPEG-mode units)
 

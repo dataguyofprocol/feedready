@@ -81,7 +81,7 @@ Otherwise the board is your question. Build three directions, following vibes.md
 - Each direction then adds its own `look` and the region moves that make that vibe work on this photo.
 - The second and third directions each answer a measured opportunity — the light, a colour pair, the eye path, the separation — rather than swapping looks alone.
 - If a recrop clearly beats the frame you have ("the portrait inside this frame"), offer it as a direction of its own: its crop, the base fixes, a look that suits it, labelled as what it is ("C · The portrait inside").
-- One direction is the clean, faithful one. The other two must differ visibly.
+- One direction is the clean, faithful one. One runs bold: the light-fitted look at 130–160 amount (vibes.md, "Reading the light"); the critique checks are the net that catches it. The other two must differ visibly.
 - Give each a `label` and a `note`.
 
 Run `run.sh board PHOTO A.json B.json C.json`. If `too_similar` lists a pair, push them apart and rerun.
