@@ -137,6 +137,24 @@ Rebaseline deliberately. `--regen` after an intentional change to looks, sliders
 > [!TIP]
 > Model checks print `skip` when that model isn't installed, so a pass with skips doesn't cover everything. `suggest` needs the Mac tier (Vision + SegFormer); `golden` and `eval` fingerprints assume the cv2 branches.
 
+## Wow eval (the taste gate)
+
+Selftest covers correctness; the wow eval covers taste. Before shipping a change to how the skill suggests edits (SKILL.md, vibes.md, looks, diagnose's findings/opportunities, recrops), blind-rate it against the current behaviour:
+
+```bash
+~/.cache/feedready/venv/bin/python tools/wow_eval.py new RUN       # scaffold briefs for the 12 commons photos
+# fill briefs.json (destination + vibe per photo), then for each arm:
+~/.cache/feedready/venv/bin/python tools/wow_eval.py freeze RUN baseline .
+# ...make the candidate changes, or freeze a second checkout...
+~/.cache/feedready/venv/bin/python tools/wow_eval.py freeze RUN candidate .
+# author recipes per arm per photo in RUN/recipes/<arm>/ (the directions that arm's docs produce)
+~/.cache/feedready/venv/bin/python tools/wow_eval.py render RUN     # blind jpgs + ratings scaffold
+# rate blind/view-order.txt by eye, fill ratings.json (choice, wow, damage per photo)
+~/.cache/feedready/venv/bin/python tools/wow_eval.py report RUN     # per-arm wow/pick/damage + the gate
+```
+
+Each arm renders with its own frozen copy of the scripts, so behaviour differences are real. The gate: the candidate must not lose pick rate, must raise the wow rate, and must have zero damage flags. A tie fails. Runs live in `~/.cache/feedready/wow-eval/`; the 2026-10-10 photo-led pilot under `~/.cache/feedready/creative-eval/` is the cautionary precedent.
+
 ## README art
 
 Everything in the README is drawn from one real session, the trek photo in `~/.cache/feedready/work/1-012c6c15/`, so these scripts only run on the Mac that holds it.
