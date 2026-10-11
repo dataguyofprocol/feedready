@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import numpy as np
 from PIL import Image
 
@@ -461,6 +463,29 @@ def test_recrops():
     lib.check("no recrops below the resolution floor", recrops.mine(small) == [])
 
 
+def test_taste():
+    import feedready
+
+    root = lib.tmp() / "work"
+    w = root / "photo-abc12345"
+    (w / "versions").mkdir(parents=True)
+    (w / "versions" / "v1.json").write_text(json.dumps({"preset": "instagram", "steps": [
+        {"name": "grade", "look": "moody", "amount": 80},
+        {"name": "lift", "adjust": {"exposure": 0.4}}]}))
+    (w / "versions" / "v2.json").write_text(json.dumps({"preset": "instagram", "vignette": -15, "steps": [
+        {"name": "grade", "look": "moody", "amount": 120},
+        {"name": "warm", "adjust": {"temp": 10}}]}))
+    (w / "versions" / "index.json").write_text(json.dumps({"1": {"note": "warmer"}, "2": {"note": "ship it"}}))
+    t = feedready.taste(root)
+    lib.check("taste weights the final version double",
+              t["photos_edited"] == 1 and t["look_use"]["moody"]["times"] == 3
+              and t["look_use"]["moody"]["median_amount"] == 120
+              and t["presets"]["instagram"] == 3 and t["vignette_use"] == 2
+              and t["slider_medians"]["exposure"] == 0.4 and t["slider_medians"]["temp"] == 10)
+    lib.check("taste keeps the note vocabulary", t["recent_notes"] == ["warmer", "ship it"])
+    lib.check("taste stays empty without history", feedready.taste(lib.tmp() / "nothing") == {})
+
+
 def test_cli_pure():
     import feedready
 
@@ -492,4 +517,5 @@ def run():
     test_review_units()
     test_opportunities()
     test_recrops()
+    test_taste()
     test_cli_pure()

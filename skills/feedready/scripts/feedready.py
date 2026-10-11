@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -71,7 +72,7 @@ def prepare(src: Path) -> tuple[Path, Path, np.ndarray]:
         h.update(f.read(1 << 20))
     h.update(str(src.stat().st_size).encode())
     h.update(str(WORKING_COPY_VERSION).encode())
-    work = CACHE / "work" / f"{src.stem}-{h.hexdigest()[:8]}"
+    work = Path(os.environ.get("FEEDREADY_WORK", CACHE / "work")) / f"{src.stem}-{h.hexdigest()[:8]}"
     work.mkdir(parents=True, exist_ok=True)
     working = work / "working.png"
     if not working.exists():
@@ -99,6 +100,54 @@ def version_numbers(work: Path) -> list[int]:
 def version_index(work: Path) -> dict:
     path = versions_dir(work) / "index.json"
     return json.loads(path.read_text()) if path.exists() else {}
+
+
+def taste(work_root: Path | None = None) -> dict:
+    root = work_root or CACHE / "work"
+    looks: dict[str, list[float]] = {}
+    sliders: dict[str, list[float]] = {}
+    presets: dict[str, int] = {}
+    vignettes = 0
+    photos = 0
+    notes: list[str] = []
+    for work in sorted(root.glob("*")):
+        if not work.is_dir():
+            continue
+        numbers = version_numbers(work)
+        if not numbers:
+            continue
+        photos += 1
+        for n in numbers:
+            recipe = json.loads((versions_dir(work) / f"v{n}.json").read_text())
+            weight = 2 if n == numbers[-1] else 1
+            for step in recipe.get("steps", []):
+                if look := step.get("look"):
+                    looks.setdefault(look, []).extend([step.get("amount", 100)] * weight)
+                for key, val in (step.get("adjust") or {}).items():
+                    if isinstance(val, (int, float)):
+                        sliders.setdefault(key, []).extend([abs(val)] * weight)
+            if "vignette" in recipe:
+                vignettes += weight
+            if preset := recipe.get("preset"):
+                presets[preset] = presets.get(preset, 0) + weight
+        notes += [str(m.get("note", "")).strip() for m in version_index(work).values()
+                  if str(m.get("note", "")).strip()]
+    if not photos:
+        return {}
+
+    def median(vals):
+        s = sorted(vals)
+        return round(s[len(s) // 2], 1)
+
+    return {
+        "photos_edited": photos,
+        "look_use": {k: {"times": len(v), "median_amount": median(v)}
+                     for k, v in sorted(looks.items(), key=lambda kv: -len(kv[1]))[:6]},
+        "slider_medians": {k: median(v) for k, v in sorted(sliders.items(), key=lambda kv: -len(kv[1]))[:8]},
+        "vignette_use": vignettes,
+        "presets": dict(sorted(presets.items(), key=lambda kv: -kv[1])),
+        "recent_notes": notes[-8:],
+    }
 
 
 def load_recipe(arg: str, work: Path) -> dict:
@@ -187,6 +236,8 @@ def cmd_inspect(args) -> dict:
     if numbers := version_numbers(work):
         index = version_index(work)
         out["previous_versions"] = [{"version": f"v{n}", "note": index.get(str(n), {}).get("note", "")} for n in numbers]
+    if history := taste():
+        out["taste"] = history
     grid = work / "grid.jpg"
     review.grid_image(img, faces, grid, icc)
     out["grid"] = str(grid)

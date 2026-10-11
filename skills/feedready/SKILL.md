@@ -67,6 +67,8 @@ Form a photographer's read:
 
 If `previous_versions` is there, you've edited this photo before. Offer to continue from the latest version or start fresh.
 
+If `taste` is there, it's this user's demonstrated taste across past sessions: favourite looks and their amounts, how strong the sliders run, vignette and destination habits. Lean the board that way — while still answering this photo's own opportunities.
+
 If `profile.signals.face_readable` is false, the face is covered or too dark to read as skin. The face findings are skipped, and Vision's face and eye points are unreliable, so place any face or eye mask from a zoomed grid instead of `type: face`.
 
 ## 2. Brief: agree the vibe

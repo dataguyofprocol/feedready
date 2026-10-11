@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -64,6 +65,19 @@ def tmp() -> Path:
     if _TMP is None:
         _TMP = Path(tempfile.mkdtemp(prefix="feedready-test-"))
     return _TMP
+
+
+@contextmanager
+def isolated_work():
+    old = os.environ.get("FEEDREADY_WORK")
+    os.environ["FEEDREADY_WORK"] = str(tmp() / "work")
+    try:
+        yield
+    finally:
+        if old is None:
+            os.environ.pop("FEEDREADY_WORK", None)
+        else:
+            os.environ["FEEDREADY_WORK"] = old
 
 
 def card() -> np.ndarray:
@@ -148,7 +162,8 @@ def basic_tier():
 
 def cli_stdout(cmd, *argv):
     res = subprocess.run([sys.executable, str(SCRIPTS / "feedready.py"), cmd, *argv],
-                         capture_output=True, text=True)
+                         capture_output=True, text=True,
+                         env=dict(os.environ, FEEDREADY_WORK=str(tmp() / "work")))
     if res.returncode:
         raise RuntimeError(res.stderr or res.stdout)
     return json.loads(res.stdout)
@@ -169,7 +184,8 @@ def cli_error(cmd, *argv):
 
 def apply_cli(recipe, src, out):
     res = subprocess.run([sys.executable, str(SCRIPTS / "feedready.py"), "apply", json.dumps(recipe), str(src), "-o", str(out)],
-                         capture_output=True, text=True)
+                         capture_output=True, text=True,
+                         env=dict(os.environ, FEEDREADY_WORK=str(tmp() / "work")))
     if res.returncode:
         raise RuntimeError(res.stderr or res.stdout)
     return load_rgb(out)
@@ -178,7 +194,7 @@ def apply_cli(recipe, src, out):
 def apply_np(recipe, src, out):
     import feedready
 
-    with basic_tier():
+    with basic_tier(), isolated_work():
         args = type("Args", (), {})()
         args.recipe, args.image, args.output = json.dumps(recipe), str(src), str(out)
         feedready.cmd_apply(args)
@@ -197,7 +213,7 @@ def cli(renderer, cmd, **kw):
         return cli_stdout(cmd, *argv)
     import feedready
 
-    with basic_tier():
+    with basic_tier(), isolated_work():
         args = type("Args", (), {})()
         args.__dict__.update({"note": "", **kw})
         return {"preview": feedready.cmd_preview, "board": feedready.cmd_board, "apply": feedready.cmd_apply}[cmd](args)
@@ -211,7 +227,7 @@ def work_dir_for(src: Path) -> Path:
         h.update(f.read(1 << 20))
     h.update(str(src.stat().st_size).encode())
     h.update(b"2")
-    return CACHE / "work" / f"{src.stem}-{h.hexdigest()[:8]}"
+    return tmp() / "work" / f"{src.stem}-{h.hexdigest()[:8]}"
 
 
 def _srgb_to_xyz(img):
