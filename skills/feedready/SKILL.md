@@ -76,10 +76,12 @@ You need two things:
 - **Destination:** Instagram 4:5, LinkedIn square or profile circle, story 9:16, or as is.
 - **Vibe.**
 
+If the destination is unknown, ask for it in the same exchange as the vibe, or edit at the original aspect and offer the crop variants as board directions. Never impose a crop the user didn't choose, and never cut a person to fit an aspect: when `inspect`'s crop finding says the frame has to choose what to keep, ask — don't guess.
+
 If both are clear already ("make it moody for insta"), skip the board and go to round 1.
 
 Otherwise the board is your question. Build three directions, following vibes.md:
-- Every direction shares the base fixes that are right whatever the vibe: findings, distraction removal, the destination crop.
+- Every direction shares the base fixes that are right whatever the vibe: findings, distraction removal, and the destination crop **only if the user chose a destination**; otherwise keep the original aspect and offer crop variants as their own directions.
 - Each direction then adds its own `look` and the region moves that make that vibe work on this photo.
 - The second and third directions each answer a measured opportunity — the light, a colour pair, the eye path, the separation — rather than swapping looks alone.
 - If a recrop clearly beats the frame you have ("the portrait inside this frame"), offer it as a direction of its own: its crop, the base fixes, a look that suits it, labelled as what it is ("C · The portrait inside").

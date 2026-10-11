@@ -353,26 +353,48 @@ def crop(scene: Scene):
     H, W = scene.img.shape[:2]
     box = None
     anchor = None
+    person = person_mask(scene)
     if scene_has_vision(scene):
         faces = scene.faces()
         if faces:
             x0, y0, x1, y1 = faces[0]["box"]
             anchor = [round((x0 + x1) / 2, 3), round((y0 + y1) / 2, 3)]
-        if (person := person_mask(scene)) is not None:
+        if person is not None:
             ys, xs = np.nonzero(person > 0.5)
-            box = [xs.min() / W, ys.min() / H, xs.max() / W, ys.max() / H]
+            box = [float(xs.min() / W), float(ys.min() / H), float(xs.max() / W), float(ys.max() / H)]
         elif scene.vision().get("salient_boxes"):
-            box = scene.vision()["salient_boxes"][0]
+            box = [float(v) for v in scene.vision()["salient_boxes"][0]]
     if box is None:
         return []
-    anchor = anchor or [round((box[0] + box[2]) / 2, 3), round(box[1] + 0.05 * (box[3] - box[1]), 3)]
+    anchor = anchor or [round((box[0] + box[2]) / 2, 3), round((box[1] + 0.05 * (box[3] - box[1])), 3)]
+    cw = min(1.0, 0.8 * H / W)
+    fx = min(max(anchor[0], cw / 2), 1 - cw / 2)
     headroom = box[1]
+    ev = {"subject_box": [round(v, 3) for v in box], "anchor": anchor, "headroom": round(headroom, 3)}
+    if box[2] - box[0] > cw - 0.04:
+        return [{
+            "finding": (f"the subject spans {(box[2] - box[0]) * 100:.0f}% of the width, so a 4:5 crop cannot hold it — "
+                        "ask what to include before cropping"),
+            "evidence": ev,
+        }]
+    fa_x = min(max((fx - box[0] + 0.02) / cw, 0.14), 0.86)
+    left, right = fx - fa_x * cw, fx + (1 - fa_x) * cw
+    if box[0] < left - 0.005 or box[2] > right + 0.005:
+        side = "left" if box[0] < left else "right"
+        keeps = "a left-anchored crop keeps the subject" if side == "left" else "a right-anchored crop keeps the subject"
+        return [{
+            "finding": (f"a 4:5 crop would cut the subject at the {side} — {keeps} and drops the other side; "
+                        "ask what to include before cropping"),
+            "evidence": {**ev, "crop_width": round(cw, 3)},
+        }]
+    anchor = [round(fx, 3), anchor[1]]
+    fa_x = round(fa_x, 3)
     return [{
         "finding": f"{headroom * 100:.0f}% of the frame is empty above the subject" if headroom > 0.2
         else "subject framing is tight; crop mainly for the destination aspect",
-        "evidence": {"subject_box": [round(v, 3) for v in box], "anchor": anchor, "headroom": round(headroom, 3)},
-        "crop": {"instagram": {"aspect": "4:5", "focus": anchor, "focus_at": [0.5, 0.36]},
-                 "linkedin": {"aspect": "1:1", "focus": anchor, "focus_at": [0.5, 0.42], "scale": 0.7}},
+        "evidence": ev,
+        "crop": {"instagram": {"aspect": "4:5", "focus": anchor, "focus_at": [fa_x, 0.36]},
+                 "linkedin": {"aspect": "1:1", "focus": anchor, "focus_at": [fa_x, 0.42], "scale": 0.7}},
     }]
 
 

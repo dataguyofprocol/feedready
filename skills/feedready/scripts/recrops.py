@@ -94,7 +94,7 @@ def _eye_terms(score, box):
     return keep, density
 
 
-def _hero_terms(box, faces, person_box):
+def _hero_terms(box, faces, person_box, guard_box):
     score, ev = 0.0, {}
     if faces:
         fx0, fy0, fx1, fy1 = faces[0]["box"]
@@ -122,18 +122,26 @@ def _hero_terms(box, faces, person_box):
             ev["cuts_person"] = True
         elif pin and py1 - py0 > 0.2 * (box[3] - box[1]):
             score += 0.25
+    elif guard_box:
+        gx0, gy0, gx1, gy1 = guard_box
+        gin = gx0 >= box[0] - 0.01 and gy0 >= box[1] - 0.01 and gx1 <= box[2] + 0.01 and gy1 <= box[3] + 0.01
+        gout = gx1 < box[0] or gy1 < box[1] or gx0 > box[2] or gy0 > box[3]
+        if not gin and not gout:
+            score -= 0.3
+            ev["cuts_subject"] = True
     return score, ev
 
 
 def _why(aspect, kind, ev):
     share = ev.get("face_height_share")
+    warn = " — check the subject survives this crop" if ev.get("cuts_subject") else ""
     if share is not None and 0.2 <= share <= 0.65:
-        return f"a {aspect} on the face — the portrait inside this frame"
+        return f"a {aspect} on the face — the portrait inside this frame{warn}"
     if kind == "detail":
-        return f"a {aspect} on the busiest region — denser with detail than the frame it came from"
+        return f"a {aspect} on the busiest region — denser with detail than the frame it came from{warn}"
     if aspect in ("9:16", "16:9"):
-        return f"a {aspect} out of this frame — a different photo for a different surface"
-    return f"a tighter {aspect} — the same moment with less around it"
+        return f"a {aspect} out of this frame — a different photo for a different surface{warn}"
+    return f"a tighter {aspect} — the same moment with less around it{warn}"
 
 
 def mine(scene) -> list[dict]:
@@ -145,6 +153,14 @@ def mine(scene) -> list[dict]:
     except MissingCapability:
         faces = []
     person_box = _person_box(scene)
+    guard_box = None
+    if person_box is None:
+        try:
+            salient = scene.vision().get("salient_boxes") or []
+        except MissingCapability:
+            salient = []
+        if salient:
+            guard_box = [float(v) for v in salient[0]]
     anchors = _anchors(scene, score)
     raw = []
     for aspect, a in ASPECTS:
@@ -159,7 +175,7 @@ def mine(scene) -> list[dict]:
                 keep, density = _eye_terms(score, box)
                 if keep < 0.25:
                     continue
-                hero, ev = _hero_terms(box, faces, person_box)
+                hero, ev = _hero_terms(box, faces, person_box, guard_box)
                 total = 2.2 * keep + 1.2 * min(density, 2.5) + 0.2 * prior + hero
                 raw.append((round(total, 3), aspect, box, kind,
                             {**ev, "eye_keep": round(keep, 2), "eye_density": round(density, 2)}))
@@ -170,6 +186,5 @@ def mine(scene) -> list[dict]:
             continue
         out.append({"aspect": aspect, "box": box, "score": total, "anchor": kind, "evidence": ev,
                     "crop": {"box": box}, "why": _why(aspect, kind, ev)})
-        if len(out) >= MAX_OUT:
-            break
+        if len(out) >= MAX_OUT:            break
     return out

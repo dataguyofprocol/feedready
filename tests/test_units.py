@@ -486,6 +486,28 @@ def test_taste():
     lib.check("taste stays empty without history", feedready.taste(lib.tmp() / "nothing") == {})
 
 
+def test_crop_ask():
+    wide = np.full((400, 600, 3), 0.3, np.float32)
+    work = lib.tmp() / "cropask"
+    (work / "vision").mkdir(parents=True, exist_ok=True)
+    scene = Scene(work, None, wide)
+    scene._vision = {"salient_boxes": [[0.05, 0.33, 0.78, 0.995]]}
+    out = diagnose.crop(scene)
+    lib.check("wide salient subject asks instead of cropping",
+              out and "ask what to include" in out[0]["finding"] and "crop" not in out[0])
+    pmask = np.zeros((400, 600), np.float32)
+    pmask[280:395, 12:180] = 1.0
+    imaging.save_mask(pmask, work / "vision" / "person.png")
+    scene = Scene(work, None, wide)
+    scene._vision = {"salient_boxes": [[0.05, 0.33, 0.78, 0.995]]}
+    out = diagnose.crop(scene)
+    fa = out[0]["crop"]["instagram"]["focus_at"][0] if out and "crop" in out[0] else None
+    cw = 0.8 * 400 / 600
+    left = 0.267 - fa * cw
+    lib.check("left-edge person is kept inside the 4:5",
+              out and "ask" not in out[0]["finding"] and fa is not None and left <= 12 / 600 + 0.005)
+
+
 def test_cli_pure():
     import feedready
 
@@ -518,4 +540,5 @@ def run():
     test_opportunities()
     test_recrops()
     test_taste()
+    test_crop_ask()
     test_cli_pure()

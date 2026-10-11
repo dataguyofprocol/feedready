@@ -35,7 +35,7 @@ A look is a starting grade. Put it in its own step: `{"name": "warm grade", "loo
 
 ## Directions by genre
 
-Use the `profile.genre` from `inspect`, then trust your eye over it. Offer three directions that differ in a way someone notices at thumbnail size. `board` reports `too_similar` when two tiles are close; push those apart or replace one. One direction is always the faithful "clean" version: fixes only, `natural` look. One runs bold, fitted to the measured light (see Reading the light).
+Use the `profile.genre` from `inspect`, then trust your eye over it. Offer three directions that differ in a way someone notices at thumbnail size. `board` reports `too_similar` when two tiles are close; push those apart or replace one. One direction is always the faithful "clean" version: fixes only, `natural` look. One runs bold, fitted to the measured light (see Reading the light). Crops are chosen, never assumed: keep the original aspect until the user picks a destination, and when an aspect would cut a person, ask what to include — a photo that loses its subject isn't a crop, it's a mistake.
 
 | genre | clean | second | third | region moves that make it work |
 |---|---|---|---|---|
