@@ -192,6 +192,11 @@ def box_blur(a: np.ndarray, r: int) -> np.ndarray:
     return along(along(a, 0), 1)
 
 
+def tiles(a: np.ndarray, th: int = 8, tw: int = 8) -> np.ndarray:
+    gh, gw = a.shape[0] // th, a.shape[1] // tw
+    return a[: gh * th, : gw * tw].reshape(th, gh, tw, gw).mean((1, 3))
+
+
 def gaussian(a: np.ndarray, sigma: float) -> np.ndarray:
     if sigma < 0.5:
         return a

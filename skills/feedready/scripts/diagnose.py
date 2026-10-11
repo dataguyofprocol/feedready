@@ -4,7 +4,7 @@ import numpy as np
 
 from detect import MissingCapability, Scene, segformer_available
 from develop import HSL_BANDS
-from imaging import cv2, gaussian, luma, min_filter, resize, rgb_to_hsv, skin_mask, srgb_to_linear
+from imaging import cv2, gaussian, luma, min_filter, resize, rgb_to_hsv, skin_mask, srgb_to_linear, tiles
 
 SCENERY = ("mountain", "building", "tree", "water", "ground", "rock")
 
@@ -16,11 +16,6 @@ def _mean_lin(img, w):
 
 def _stops(img, a, b):
     return float(np.log2(max(_mean_lin(img, a), 1e-5) / max(_mean_lin(img, b), 1e-5)))
-
-
-def _tiles(a, th=8, tw=8):
-    gh, gw = a.shape[0] // th, a.shape[1] // tw
-    return a[: gh * th, : gw * tw].reshape(th, gh, tw, gw).mean((1, 3))
 
 
 def _small(img, w=256):
@@ -44,7 +39,7 @@ def _warmth(lin, m):
 def _light_stats(img):
     small = _small(img)
     lum = luma(small)
-    t = _tiles(lum)
+    t = tiles(lum)
     p90, p10 = np.percentile(t, [90, 10])
     spread = float(np.log2(max(p90, 0.02) / max(p10, 0.02)))
     mean = float(t.mean())
@@ -417,7 +412,7 @@ def eye_path(scene: Scene):
     lc = np.abs(lum - gaussian(lum, 6))
     score = None
     for m, w in ((lum, 0.5), (lc, 0.3), (s, 0.2)):
-        t = _tiles(m)
+        t = tiles(m)
         part = w * np.clip(t / max(float(t.max()), 1e-6), 0, 1)
         score = part if score is None else score + part
     faces = scene.faces() if scene_has_vision(scene) else []

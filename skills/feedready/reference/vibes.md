@@ -32,6 +32,10 @@ Use the `profile.genre` from `inspect`, then trust your eye over it. Offer three
 
 Write each direction as a full recipe with `label` ("A · Clean") and `note` (one line in the user's language: what it feels like and what it does to this photo).
 
+## The other photo in the frame
+
+`inspect` also returns `recrops`: up to three measured alternative framings — a square on the face, a 9:16 vertical, a tighter cut on the busiest region — each with a ready `crop` box and the evidence for why it works (eye weight kept, face height share, thirds placement). When one clearly beats the frame you have, offer it as a direction of its own, labelled as what it is ("D · The portrait inside"), with the base fixes and a look that suits it. Don't force one onto every photo: when no recrop keeps enough of the eye weight, the frame was right.
+
 ## Notes → moves
 
 Change only what the note is about; everything else stays as it was. One notch is a visible but modest step: about 25–35% of the current value, or the step below when there's nothing to scale. Say what you read the note as when it was vague.

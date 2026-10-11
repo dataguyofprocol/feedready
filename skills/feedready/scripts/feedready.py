@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import critique
 import diagnose
+import recrops
 import masks as maskmod
 import render
 import review
@@ -182,6 +183,7 @@ def cmd_inspect(args) -> dict:
     out["opportunities"] = opp["opportunities"]
     if opp["skipped"]:
         out["diagnostics"]["skipped"] += opp["skipped"]
+    out["recrops"] = recrops.mine(scene)
     if numbers := version_numbers(work):
         index = version_index(work)
         out["previous_versions"] = [{"version": f"v{n}", "note": index.get(str(n), {}).get("note", "")} for n in numbers]

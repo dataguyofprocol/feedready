@@ -51,6 +51,18 @@ def check_photo(rel: str, label: dict, report: dict):
                         if o["check"] == "colour_pairs"), None)
             lib.check(f"suggest {rel} colour pair", got == opp_label["pair"],
                       f"{got} (want {opp_label['pair']})")
+    rec_label = label.get("recrops")
+    if rec_label:
+        got = report.get("recrops", [])
+        lib.check(f"suggest {rel} recrop count", len(got) >= rec_label.get("min", 1), f"{len(got)}")
+        if "any_aspects" in rec_label:
+            aspects = {r["aspect"] for r in got}
+            lib.check(f"suggest {rel} recrop aspects", set(rec_label["any_aspects"]) & aspects,
+                      f"{sorted(aspects)} (want any of {rec_label['any_aspects']})")
+        if "face_share" in rec_label:
+            lo, hi = rec_label["face_share"]
+            ok = any(lo <= r["evidence"].get("face_height_share", 0) <= hi for r in got)
+            lib.check(f"suggest {rel} recrop face share", ok)
 
 
 def kodak_gates():

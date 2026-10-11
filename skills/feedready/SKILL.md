@@ -63,6 +63,7 @@ Form a photographer's read:
 - What's working.
 - What's holding it back. Use `diagnostics.findings` (each has measured `evidence` and a ready `step`) plus what measurements can't judge: distractions, colour harmony, the crop.
 - What could make it special. `opportunities` sits beside the findings: measured strengths — the light's character (`profile.light`), where the eye actually lands, colour pairs worth pushing, separation worth leaning into. Each has `evidence` and a `move_hint`. This is where the wow comes from.
+- The other photos inside it. `recrops` lists up to three measured alternative framings — a square on the face, a vertical, a tighter cut on the busiest region — each with a ready `crop` box and the evidence for why it works.
 
 If `previous_versions` is there, you've edited this photo before. Offer to continue from the latest version or start fresh.
 
@@ -79,6 +80,7 @@ Otherwise the board is your question. Build three directions, following vibes.md
 - Every direction shares the base fixes that are right whatever the vibe: findings, distraction removal, the destination crop.
 - Each direction then adds its own `look` and the region moves that make that vibe work on this photo.
 - The second and third directions each answer a measured opportunity — the light, a colour pair, the eye path, the separation — rather than swapping looks alone.
+- If a recrop clearly beats the frame you have ("the portrait inside this frame"), offer it as a direction of its own: its crop, the base fixes, a look that suits it, labelled as what it is ("C · The portrait inside").
 - One direction is the clean, faithful one. The other two must differ visibly.
 - Give each a `label` and a `note`.
 

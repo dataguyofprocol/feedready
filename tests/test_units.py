@@ -9,6 +9,7 @@ import develop
 import diagnose
 import imaging
 import masks
+import recrops
 import review
 from detect import Scene
 from imaging import (
@@ -416,6 +417,31 @@ def test_opportunities():
     lib.check("separation potential sees the silhouette", out and "silhouette" in out[0]["finding"])
 
 
+def test_recrops():
+    img = np.full((600, 900, 3), 0.15, np.float32)
+    img[150:350, 520:760] = 0.9
+    img[180:260, 590:670] = 1.0
+    scene = Scene(None, None, img)
+    scene._vision = {"faces": [{"box": [0.62, 0.26, 0.78, 0.44]}]}
+    out = recrops.mine(scene)
+    lib.check("recrops stay inside the frame",
+              1 <= len(out) <= 3
+              and all(0 <= b[0] < b[2] <= 1 and 0 <= b[1] < b[3] <= 1 for b in (r["box"] for r in out)))
+    top = out[0]
+    face = scene.faces()[0]["box"]
+    inside = (top["box"][0] <= face[0] and top["box"][1] <= face[1]
+              and top["box"][2] >= face[2] and top["box"][3] >= face[3])
+    lib.check("recrops find the off-centre subject",
+              inside and top["evidence"].get("face_height_share", 0) >= 0.2)
+    lib.check("recrops rank and diversify",
+              all(out[i]["score"] >= out[i + 1]["score"] for i in range(len(out) - 1))
+              and all(recrops._iou(out[i]["box"], out[j]["box"]) <= 0.55
+                      for i in range(len(out)) for j in range(i + 1, len(out))))
+    small = Scene(None, None, np.zeros((200, 300, 3), np.float32))
+    small._vision = {"faces": []}
+    lib.check("no recrops below the resolution floor", recrops.mine(small) == [])
+
+
 def test_cli_pure():
     import feedready
 
@@ -446,4 +472,5 @@ def run():
     test_critique_units()
     test_review_units()
     test_opportunities()
+    test_recrops()
     test_cli_pure()
