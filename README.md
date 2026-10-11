@@ -5,7 +5,7 @@
 <h1 align="center">feedready</h1>
 
 <p align="center">
-  <b>Hand Claude a phone photo. Get back one that's ready for the feed.</b>
+  <b>Hand Claude a phone photo. An experienced Lightroom editor who listens, evolves with you, and gets it ready for the feed.</b>
 </p>
 
 <p align="center">
@@ -24,7 +24,11 @@
 
 Claude edits your photo like an experienced Lightroom editor you hired. It reads the photo before touching it, shows you three rendered directions, then edits in versions and checks each one before you see it. You give notes in plain words until it's right.
 
-feedready is early (v0.2.x) and hobby-paced: the edit loop is solid and covered by a self-test, but the recipe format may still change between minor versions.
+feedready is early (v0.3.x) and hobby-paced: the edit loop is solid and covered by a self-test, but the recipe format may still change between minor versions.
+
+## It finds the photo you almost took
+
+It measures what the photo has before suggesting anything: hard or soft light and where it sits, colour pairs worth pulling apart, where the eye actually lands. The three directions follow that light instead of the genre, and one runs bold on purpose. Sometimes a direction is a different framing altogether: the square on the face, the vertical out of your landscape, mined from the same pixels. If a crop would cut you out, it asks instead of guessing.
 
 ## It edits in parts, like a retoucher
 
@@ -36,7 +40,7 @@ One slider moves the sky, your face and your jacket together, so Claude masks th
 
 <p align="center"><img src="assets/art/talk.svg" width="880" alt="Six example notes and what Claude does with each: B but darker, warmer, too much, back to v2, show me all versions, ship it"></p>
 
-Every version is saved, so nothing you liked is ever lost. Already know what you want? Paste an edit list and say `apply`.
+Every version is saved, so nothing you liked is ever lost. New boards lean toward what you keep choosing: the looks, the amounts, the destinations, all from history that stays on this machine. Already know what you want? Paste an edit list and say `apply`.
 
 ## Every round shows its work
 
@@ -90,6 +94,7 @@ A lighter version runs as an uploaded skill in the claude.ai app. It renders wit
 | | Mac | Phone |
 |---|:---:|:---:|
 | Crops, Lightroom-style sliders, looks | ✅ | ✅ |
+| Light and colour reads, recrop suggestions | ✅ | ✅ |
 | Shape, brightness and colour masks | ✅ | ✅ |
 | Person, face, sky and scenery masks | ✅ | |
 | Masks for any object, and object removal | ✅ | |
@@ -151,4 +156,4 @@ That's fine for your own posts. Check them before using feedready commercially.
 
 The code is MIT — see [LICENSE](LICENSE). The models `setup.sh` downloads keep their own licences; check the table above before using them commercially.
 
-Want to drive the engine yourself, read the recipe format or change the skill? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Want to drive the engine yourself, read the recipe format, gate a taste change with the blind wow eval, or change the skill? See [CONTRIBUTING.md](CONTRIBUTING.md).
