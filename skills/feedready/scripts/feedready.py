@@ -178,6 +178,10 @@ def cmd_inspect(args) -> dict:
         out["scene_classes"] = scene.segment_summary()
     out["profile"] = diagnose.profile(scene)
     out["diagnostics"] = diagnose.run(scene)
+    opp = diagnose.run_opportunities(scene)
+    out["opportunities"] = opp["opportunities"]
+    if opp["skipped"]:
+        out["diagnostics"]["skipped"] += opp["skipped"]
     if numbers := version_numbers(work):
         index = version_index(work)
         out["previous_versions"] = [{"version": f"v{n}", "note": index.get(str(n), {}).get("note", "")} for n in numbers]

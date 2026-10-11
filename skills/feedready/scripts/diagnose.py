@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from detect import MissingCapability, Scene, segformer_available
+from develop import HSL_BANDS
 from imaging import cv2, gaussian, luma, min_filter, resize, rgb_to_hsv, skin_mask, srgb_to_linear
 
 SCENERY = ("mountain", "building", "tree", "water", "ground", "rock")
@@ -15,6 +16,52 @@ def _mean_lin(img, w):
 
 def _stops(img, a, b):
     return float(np.log2(max(_mean_lin(img, a), 1e-5) / max(_mean_lin(img, b), 1e-5)))
+
+
+def _tiles(a, th=8, tw=8):
+    gh, gw = a.shape[0] // th, a.shape[1] // tw
+    return a[: gh * th, : gw * tw].reshape(th, gh, tw, gw).mean((1, 3))
+
+
+def _small(img, w=256):
+    return resize(img, w, max(1, round(w * img.shape[0] / img.shape[1])))
+
+
+def _region_name(idx, shape):
+    v = "upper" if idx[0] < shape[0] / 3 else "lower" if idx[0] > 2 * shape[0] / 3 else "middle"
+    h = "left" if idx[1] < shape[1] / 3 else "right" if idx[1] > 2 * shape[1] / 3 else ""
+    return f"{v} {h}".strip() if h else v
+
+
+def _band_name(hue):
+    return min(HSL_BANDS, key=lambda b: min(abs(hue - HSL_BANDS[b]), 360 - abs(hue - HSL_BANDS[b])))
+
+
+def _warmth(lin, m):
+    return float(np.log2(max(lin[..., 0][m].mean(), 1e-4) / max(lin[..., 2][m].mean(), 1e-4)))
+
+
+def _light_stats(img):
+    small = _small(img)
+    lum = luma(small)
+    t = _tiles(lum)
+    p90, p10 = np.percentile(t, [90, 10])
+    spread = float(np.log2(max(p90, 0.02) / max(p10, 0.02)))
+    mean = float(t.mean())
+    direction, best = "even", 0.0
+    for side, val in (("top", t[:2].mean()), ("bottom", t[-2:].mean()),
+                      ("left", t[:, :2].mean()), ("right", t[:, -2:].mean())):
+        if val - mean > best:
+            direction, best = side, float(val - mean)
+    if best < 0.08:
+        direction = "even"
+    lin = srgb_to_linear(small)
+    hi = lum >= np.percentile(lum, 80)
+    lo = lum <= np.percentile(lum, 20)
+    warm_split = round(_warmth(lin, hi) - _warmth(lin, lo), 2)
+    quality = "hard" if spread >= 2.0 else "soft" if spread <= 0.9 else "balanced"
+    return {"quality": quality, "direction": direction, "tile_spread_stops": round(spread, 2),
+            "warm_split": warm_split}
 
 
 def exposure(scene: Scene):
@@ -90,6 +137,7 @@ def profile(scene: Scene) -> dict:
     indoor = sum(v for k, v in shares.items() if k in INDOOR)
     lum = luma(img)
     night = float(lum.mean()) < 0.18 and float(np.percentile(lum, 99.5)) > 0.8
+    light_stats = _light_stats(img)
     if len(faces) >= 3:
         genre, hero = "group", "faces"
     elif faces and (face_share > 0.03 or person_share > 0.2):
@@ -109,6 +157,7 @@ def profile(scene: Scene) -> dict:
     return {
         "genre": genre,
         "hero": hero,
+        "light": {"quality": light_stats["quality"], "direction": light_stats["direction"]},
         "setting": "night" if night else "indoor" if indoor > outdoor + urban else "outdoor" if shares else "unknown",
         "signals": {"faces": len(faces), "face_share": round(face_share, 3),
                     "face_readable": bool(faces) and skin_mask(img, faces[0]["box"]) is not None, "person_share": round(person_share, 3),
@@ -340,7 +389,136 @@ def scene_has_vision(scene: Scene) -> bool:
         return False
 
 
+def light(scene: Scene):
+    st = _light_stats(scene.img)
+    where = f", brightest at the {st['direction']}" if st["direction"] != "even" else ""
+    if st["quality"] == "hard":
+        finding = f"hard light — {st['tile_spread_stops']:.1f} stops between bright and dark patches{where}; the shadows give this photo its shape"
+        hint = "grade for shape: hold the blacks, recover only the hero's highlights, never fully fill the shadows"
+    elif st["quality"] == "soft":
+        finding = f"soft, flat light — only {st['tile_spread_stops']:.1f} stops of range{where}; the photo has to win on colour and tone, not contrast"
+        hint = "win with colour: separate the subject's hues from the background's, or go clean and airy; shape with a vignette rather than contrast"
+    else:
+        finding = f"balanced light ({st['tile_spread_stops']:.1f} stops of range{where})"
+        hint = "a gentle S-curve and one region move on the hero is all the light work this needs"
+    if st["warm_split"] >= 0.5:
+        finding += "; highlights run warm against cool shade — a golden-hour signature"
+        hint += "; keep the split: warm highlights, cool shadows"
+    elif st["warm_split"] <= -0.5:
+        finding += "; highlights run cooler than the shade"
+        hint += "; keep the whites clean and cool rather than warming the whole frame"
+    return [{"finding": finding, "evidence": st, "move_hint": hint}]
+
+
+def eye_path(scene: Scene):
+    small = _small(scene.img)
+    lum = luma(small)
+    _, s, _ = rgb_to_hsv(small)
+    lc = np.abs(lum - gaussian(lum, 6))
+    score = None
+    for m, w in ((lum, 0.5), (lc, 0.3), (s, 0.2)):
+        t = _tiles(m)
+        part = w * np.clip(t / max(float(t.max()), 1e-6), 0, 1)
+        score = part if score is None else score + part
+    faces = scene.faces() if scene_has_vision(scene) else []
+    if faces:
+        x0, y0, x1, y1 = faces[0]["box"]
+        hero = (int(np.clip((y0 + y1) / 2 * score.shape[0], 0, score.shape[0] - 1)),
+                int(np.clip((x0 + x1) / 2 * score.shape[1], 0, score.shape[1] - 1)))
+    else:
+        hero = np.unravel_index(int(np.argmax(score)), score.shape)
+        hero = (int(hero[0]), int(hero[1]))
+    hero_score = float(score[hero])
+    if hero_score <= 0:
+        return []
+    rival, ratio = None, 0.0
+    for idx in np.argsort(score, None)[::-1][:64]:
+        i, j = np.unravel_index(int(idx), score.shape)
+        if max(abs(i - hero[0]), abs(j - hero[1])) <= 1:
+            continue
+        rival, ratio = (int(i), int(j)), float(score[i, j]) / hero_score
+        break
+    if rival is None:
+        return []
+    ev = {"hero_tile": list(hero), "rival_tile": list(rival), "rival_ratio": round(ratio, 2)}
+    if ratio >= 1.0:
+        return [{"finding": f"the {_region_name(rival, score.shape)} of the frame out-pulls the hero ({ratio:.0%} of its eye weight) — the eye lands there first",
+                 "evidence": ev,
+                 "move_hint": "choose the story: dim and desaturate the rival region, or crop closer and make it the photo"}]
+    if ratio <= 0.6:
+        return [{"finding": f"the hero already owns the eye (nearest rival at {ratio:.0%}); the edges are untreated",
+                 "evidence": ev,
+                 "move_hint": "seal it: a vignette at -12 to -18, or a soft linear burn from the busiest edge"}]
+    return []
+
+
+def colour_pairs(scene: Scene):
+    small = _small(scene.img)
+    h, s, v = rgb_to_hsv(small)
+    use = (s > 0.15) & (v > 0.12)
+    if use.sum() < 30:
+        return []
+    hue = np.clip(h[use], 0, 359.999).astype(int)
+    w = (s[use] * v[use]).astype(np.float64)
+    hist = np.zeros(36)
+    np.add.at(hist, hue // 10, w)
+    hist += np.roll(hist, 1) * 0.25 + np.roll(hist, -1) * 0.25
+    total = float(hist.sum())
+
+    def share(m):
+        return float(sum(hist[(m + d) % 36] for d in (-2, -1, 0, 1, 2)) / max(total, 1e-9))
+
+    m1 = int(np.argmax(hist))
+    suppressed = hist.copy()
+    suppressed[[(m1 + d) % 36 for d in (-2, -1, 0, 1, 2)]] = 0
+    m2 = int(np.argmax(suppressed))
+    dist = min(abs(m1 - m2), 36 - abs(m1 - m2)) * 10
+    if use.mean() >= 0.05 and 140 <= dist <= 180 and share(m1) >= 0.2 and share(m2) >= 0.12:
+        n1, n2 = _band_name(m1 * 10 + 5), _band_name(m2 * 10 + 5)
+        art = "an" if n1[0] in "aeiou" else "a"
+        return [{"finding": f"{art} {n1}-on-{n2} complementary pair is already in the frame — the contrast posters are built on",
+                 "evidence": {"names": [n1, n2], "hues": [m1 * 10 + 5, m2 * 10 + 5],
+                              "shares": [round(share(m1), 2), round(share(m2), 2)], "separation_deg": dist},
+                 "move_hint": f"push the split: saturate the {n1} side, mute or cool the {n2} side — hsl bands, not global vibrance"}]
+    if float(s.mean()) < 0.22:
+        n = float(use.size)
+        for m in range(36):
+            near = np.abs(((h * 360) - (m * 10 + 5) + 180) % 360 - 180) <= 15
+            cluster = use & near
+            csum = float(cluster.sum())
+            if not 30 <= csum <= 0.12 * n:
+                continue
+            if float(s[cluster].mean()) <= 0.45:
+                continue
+            ys, xs = np.nonzero(cluster)
+            name = _band_name(m * 10 + 5)
+            pos = _region_name((int(np.median(ys)), int(np.median(xs))), use.shape)
+            return [{"finding": f"a single {name} accent in a quiet frame, {pos} — the one colour the eye finds",
+                     "evidence": {"accent": name, "hue": m * 10 + 5, "share": round(csum / n, 3),
+                                  "accent_sat": round(float(s[cluster].mean()), 2), "mean_sat": round(float(s.mean()), 2)},
+                     "move_hint": f"build the grade around it: mute everything else a touch and let the {name} carry the colour"}]
+    return []
+
+
+def separation_potential(scene: Scene):
+    person = person_mask(scene)
+    if person is None:
+        return []
+    stops = _stops(scene.img, person, 1 - person)
+    if stops >= 0.8:
+        return [{"finding": f"the person carries {stops:.1f} stops more light than the surroundings — the separation is already there",
+                 "evidence": {"person_vs_background_stops": round(stops, 2)},
+                 "move_hint": "lean in: dim the background another 0.2–0.4 EV and the subject pops off the frame"}]
+    if stops <= -1.5:
+        return [{"finding": f"the person sits {stops:.1f} stops below the background — a silhouette waiting to be committed to",
+                 "evidence": {"person_vs_background_stops": round(stops, 2)},
+                 "move_hint": "commit to the silhouette: grade the bright background, let the figure stay dark, don't lift it halfway"}]
+    return []
+
+
 CHECKS = [exposure, subject_balance, separation, face, color_cast, haze, sky, distractions, crop]
+
+OPPORTUNITIES = [light, eye_path, colour_pairs, separation_potential]
 
 
 def run(scene: Scene) -> dict:
@@ -352,3 +530,14 @@ def run(scene: Scene) -> dict:
         except MissingCapability as e:
             skipped.append(f"{check.__name__}: {e}")
     return {"findings": findings, "skipped": skipped}
+
+
+def run_opportunities(scene: Scene) -> dict:
+    found, skipped = [], []
+    for check in OPPORTUNITIES:
+        try:
+            for o in check(scene):
+                found.append({"check": check.__name__, **o})
+        except MissingCapability as e:
+            skipped.append(f"{check.__name__}: {e}")
+    return {"opportunities": found, "skipped": skipped}

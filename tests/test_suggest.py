@@ -37,6 +37,20 @@ def check_photo(rel: str, label: dict, report: dict):
     for text in label.get("forbid_findings", []):
         lib.check(f"suggest {rel} never reports '{text}'",
                   text not in json.dumps([f["finding"] for f in findings]))
+    opp_label = label.get("opportunities")
+    if opp_label:
+        found_opp = {o["check"] for o in report.get("opportunities", [])}
+        missing_opp = set(opp_label.get("requires", [])) - found_opp
+        lib.check(f"suggest {rel} opportunities", not missing_opp, f"missing {sorted(missing_opp)}")
+        if "light" in opp_label:
+            got = report["profile"].get("light", {}).get("quality")
+            lib.check(f"suggest {rel} light quality", got == opp_label["light"],
+                      f"{got} (want {opp_label['light']})")
+        if "pair" in opp_label:
+            got = next((o["evidence"].get("names") for o in report.get("opportunities", [])
+                        if o["check"] == "colour_pairs"), None)
+            lib.check(f"suggest {rel} colour pair", got == opp_label["pair"],
+                      f"{got} (want {opp_label['pair']})")
 
 
 def kodak_gates():

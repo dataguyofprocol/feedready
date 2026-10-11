@@ -6,6 +6,7 @@ from PIL import Image
 import lib
 import critique
 import develop
+import diagnose
 import imaging
 import masks
 import review
@@ -359,6 +360,62 @@ def test_review_units():
     lib.check("lens keeps small masks at a quarter minimum", (x1 - x0) >= 25)
 
 
+def test_opportunities():
+    hard = np.full((400, 600, 3), 0.12, np.float32)
+    hard[:, 300:] = 0.95
+    soft = np.full((400, 600, 3), 0.45, np.float32)
+    rng = np.random.default_rng(3)
+    soft += gaussian(rng.normal(0, 0.02, (400, 600)).astype(np.float32), 2)[..., None]
+    st_hard, st_soft = diagnose._light_stats(hard), diagnose._light_stats(soft)
+    lib.check("light stats separate hard from soft",
+              st_hard["quality"] == "hard" and st_hard["direction"] == "right"
+              and st_soft["quality"] == "soft" and st_soft["direction"] == "even")
+    warm = np.full((400, 600, 3), 0.25, np.float32)
+    warm[:200] = (1.0, 0.85, 0.6)
+    warm[200:] = (0.2, 0.25, 0.45)
+    lib.check("warm split reads highlights against shade", diagnose._light_stats(warm)["warm_split"] >= 0.5)
+    pair = np.full((400, 600, 3), 0.2, np.float32)
+    pair[:, :300] = (0.95, 0.45, 0.1)
+    pair[:, 300:] = (0.1, 0.65, 0.7)
+    out = diagnose.colour_pairs(Scene(None, None, pair))
+    lib.check("colour pairs finds orange on aqua",
+              out and out[0]["evidence"]["names"] == ["orange", "aqua"])
+    quiet = np.full((400, 600, 3), 0.4, np.float32)
+    quiet[100:160, 250:350] = (0.8, 0.1, 0.1)
+    out = diagnose.colour_pairs(Scene(None, None, quiet))
+    lib.check("colour pairs flags a lone accent", out and out[0]["evidence"]["accent"] == "red")
+    field = np.full((400, 600, 3), 0.18, np.float32)
+    field[60:140, 60:180] = 0.6
+    scene = Scene(None, None, field)
+    scene._vision = {"faces": []}
+    out = diagnose.eye_path(scene)
+    lib.check("eye path seals when the hero owns the eye",
+              out and out[0]["evidence"]["rival_ratio"] <= 0.6)
+    field[240:320, 420:540] = 1.0
+    scene = Scene(None, None, field)
+    scene._vision = {"faces": [{"box": [0.1, 0.15, 0.3, 0.35]}]}
+    out = diagnose.eye_path(scene)
+    lib.check("eye path flags a rival that out-pulls the face",
+              out and out[0]["evidence"]["rival_ratio"] >= 1.0)
+    work = lib.tmp() / "sep"
+    (work / "vision").mkdir(parents=True, exist_ok=True)
+    pmask = np.zeros((200, 300), np.float32)
+    pmask[60:140, 110:190] = 1.0
+    imaging.save_mask(pmask, work / "vision" / "person.png")
+    lit = np.full((200, 300, 3), 0.1, np.float32)
+    lit[60:140, 110:190] = 0.85
+    scene = Scene(work, None, lit)
+    scene._vision = {}
+    out = diagnose.separation_potential(scene)
+    lib.check("separation potential sees the lit subject", out and "more light" in out[0]["finding"])
+    dark = np.full((200, 300, 3), 0.75, np.float32)
+    dark[60:140, 110:190] = 0.08
+    scene = Scene(work, None, dark)
+    scene._vision = {}
+    out = diagnose.separation_potential(scene)
+    lib.check("separation potential sees the silhouette", out and "silhouette" in out[0]["finding"])
+
+
 def test_cli_pure():
     import feedready
 
@@ -388,4 +445,5 @@ def run():
     test_mask_geometry()
     test_critique_units()
     test_review_units()
+    test_opportunities()
     test_cli_pure()
